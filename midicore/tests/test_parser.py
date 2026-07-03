@@ -4,6 +4,7 @@
 import pytest
 from mido import Message, MetaMessage
 
+from midicore.parser import SMPTETimebaseError, parse_midi
 from midicore.schema import validate_timeline
 
 from conftest import PPQ, cc64, off, on, tempo, timesig
@@ -195,6 +196,81 @@ def test_pedal_half_values_threshold(make_midi):
     n = tl["notes"][0]
     assert n["sustained"] is True
     assert n["end_tick_sounding"] == 480
+
+
+def test_restrike_cuts_pedal_tail(make_midi):
+    # C4 released at 240 while the pedal is down (pedal up at 1920) — but
+    # the SAME pitch is struck again at 960, so the first note's pedal tail
+    # is cut at the re-strike (the hammer re-uses the string).
+    tl = make_midi([tempo(120),
+                    cc64(127),
+                    on(60), off(60, time=240),
+                    on(60, time=720),          # tick 960: re-strike
+                    off(60, time=480),         # tick 1440
+                    cc64(0, time=480)])        # tick 1920: pedal up
+    first, second = sorted(tl["notes"], key=lambda n: n["start_tick"])
+    assert first["sustained"] is True
+    assert first["restruck"] is True
+    assert first["end_tick_explicit"] == 240
+    assert first["end_tick_sounding"] == 960   # cut at the re-strike
+    # The new strike itself rings until the pedal release as usual.
+    assert second["sustained"] is True
+    assert second["end_tick_sounding"] == 1920
+    assert "restruck" not in second
+
+
+def test_restrike_of_other_pitch_does_not_cut(make_midi):
+    tl = make_midi([tempo(120),
+                    cc64(127),
+                    on(60), off(60, time=240),
+                    on(62, time=720), off(62, time=480),  # different pitch
+                    cc64(0, time=480)])        # tick 1920
+    n60 = [n for n in tl["notes"] if n["pitch"] == 60][0]
+    assert n60["end_tick_sounding"] == 1920    # tail untouched
+    assert "restruck" not in n60
+
+
+def test_sustain_event_cc_values_preserved(make_midi):
+    # Raw CC64 values (incl. half-pedal levels) survive into the timeline;
+    # pedal_down is the standard >=64 binarization on top of them.
+    tl = make_midi([tempo(120),
+                    cc64(127), on(60), off(60, time=240),
+                    cc64(80, time=240),
+                    cc64(30, time=240)])
+    values = [e["value"] for e in tl["sustain_events"]]
+    downs = [e["pedal_down"] for e in tl["sustain_events"]]
+    assert values == [127, 80, 30]
+    assert downs == [True, True, False]
+
+
+def test_midbar_time_signature_change_starts_new_bar(make_midi):
+    # Documented behavior (standard notation practice): a time-signature
+    # change landing mid-bar starts a NEW bar at the change point.
+    # 4/4 -> 3/4 at tick 720 = bar 1 beat 2.5.
+    tl = make_midi([tempo(120), timesig(4, 4),
+                    on(60), off(60, time=480),
+                    timesig(3, 4, time=240),               # tick 720
+                    on(62), off(62, time=480),             # tick 720 start
+                    on(64, time=960), off(64, time=480)])  # tick 2160 start
+    n62 = [n for n in tl["notes"] if n["pitch"] == 62][0]
+    n64 = [n for n in tl["notes"] if n["pitch"] == 64][0]
+    assert (n62["bar"], n62["beat"]) == (2, 1.0)   # new bar at the change
+    assert (n64["bar"], n64["beat"]) == (3, 1.0)   # 720 + 1440 (one 3/4 bar)
+    assert tl["time_signature_map"][1]["bar"] == 2
+
+
+def test_smpte_timebase_rejected(tmp_path):
+    # Hand-built MThd with SMPTE division: high byte 0xE7 (= -25 -> 25 fps),
+    # 40 ticks per frame; one empty track so the file is otherwise valid.
+    data = (b"MThd" + (6).to_bytes(4, "big")
+            + (0).to_bytes(2, "big") + (1).to_bytes(2, "big")
+            + bytes([0xE7, 40])
+            + b"MTrk" + (4).to_bytes(4, "big")
+            + bytes([0x00, 0xFF, 0x2F, 0x00]))
+    path = tmp_path / "smpte.mid"
+    path.write_bytes(data)
+    with pytest.raises(SMPTETimebaseError, match="25 fps"):
+        parse_midi(str(path))
 
 
 def test_no_pedal_data_marks_sustain_absent(make_midi):

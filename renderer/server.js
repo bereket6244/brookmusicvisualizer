@@ -1,15 +1,25 @@
 /**
  * Studio backend (dev-time only): a small Express server that gives the
  * browser studio access to things a browser can't do — running the Python
- * parser and launching render jobs. The Vite dev server proxies /api and
- * /samples here (see studio/vite.config.ts).
+ * parser, storing presets/timelines on disk, and launching render jobs.
+ * The Vite dev server proxies /api and /samples here (studio/vite.config.ts).
  *
  * Endpoints:
- *   GET  /api/samples          list sample timelines in samples/
- *   POST /api/parse?name=x.mid raw MIDI bytes -> parsed timeline
- *                              (saved under output/, so renders can use it)
- *   POST /api/render           spawn renderer/render.js as a child job
- *   GET  /api/jobs/:id         poll job status + log tail
+ *   GET    /api/samples              list sample timelines in samples/
+ *   POST   /api/parse?name=x.mid     raw MIDI bytes -> parsed timeline
+ *                                    (saved under output/uploads/)
+ *   POST   /api/upload-timeline?name=x.json
+ *                                    save a browser-loaded timeline JSON
+ *                                    server-side so it can be rendered
+ *   GET    /api/presets              list saved presets (presets/)
+ *   GET    /api/presets/:file        one preset's JSON
+ *   POST   /api/presets              save a preset
+ *   DELETE /api/presets/:file        delete a preset
+ *   POST   /api/render               spawn renderer/render.js as a child job
+ *   GET    /api/jobs                 all jobs from this server session
+ *   GET    /api/jobs/:id             poll one job's status + log tail
+ *   GET    /api/renders              render history from render-info.json
+ *                                    files under output/renders/
  */
 
 import { spawn } from "node:child_process";
@@ -24,12 +34,16 @@ import { parseMidi } from "./lib/python.js";
 
 const config = loadConfig();
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "100mb" }));
 
 // Sample MIDIs/timelines are served as-is (the studio fetches these URLs).
 app.use("/samples", express.static(path.join(ROOT, "samples")));
 app.use("/output", express.static(path.join(ROOT, "output")));
 
+const sanitizeName = (name) => String(name).replace(/[^a-zA-Z0-9._-]/g, "_");
+
+// ---------------------------------------------------------------------------
+// Timelines
 // ---------------------------------------------------------------------------
 
 app.get("/api/samples", (_req, res) => {
@@ -55,8 +69,7 @@ app.post(
   express.raw({ type: () => true, limit: "50mb" }),
   (req, res) => {
     try {
-      const rawName = String(req.query.name || "upload.mid");
-      const safe = rawName.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const safe = sanitizeName(req.query.name || "upload.mid");
       const base = safe.replace(/\.(mid|midi)$/i, "");
       const uploadsDir = path.join(ROOT, "output", "uploads");
       fs.mkdirSync(uploadsDir, { recursive: true });
@@ -75,15 +88,93 @@ app.post(
   },
 );
 
+// A timeline JSON loaded in the browser gets copied into the managed
+// uploads folder so render jobs can reference it by server-side path.
+// (First-pass limitation: local JSON could be previewed but not rendered.)
+app.post("/api/upload-timeline", (req, res) => {
+  try {
+    const timeline = req.body;
+    if (timeline?.format !== "midicore-timeline") {
+      return res.status(400).send("not a midicore timeline JSON");
+    }
+    const safe = sanitizeName(req.query.name || "upload.timeline.json")
+      .replace(/\.timeline\.json$|\.json$/i, "");
+    const uploadsDir = path.join(ROOT, "output", "uploads");
+    fs.mkdirSync(uploadsDir, { recursive: true });
+    const timelinePath = path.join(uploadsDir, `${safe}.timeline.json`);
+    fs.writeFileSync(timelinePath, JSON.stringify(timeline));
+    res.json({
+      path: path.relative(ROOT, timelinePath).replaceAll("\\", "/"),
+    });
+  } catch (err) {
+    res.status(500).send(String(err.message ?? err));
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Presets — stored as pretty JSON files under presets/ (repo root) so they
+// are easy to commit, diff, share, and feed to the CLI.
+// ---------------------------------------------------------------------------
+
+const PRESETS_DIR = path.join(ROOT, "presets");
+
+app.get("/api/presets", (_req, res) => {
+  if (!fs.existsSync(PRESETS_DIR)) return res.json([]);
+  const out = [];
+  for (const f of fs.readdirSync(PRESETS_DIR)) {
+    if (!f.endsWith(".preset.json")) continue;
+    try {
+      const p = JSON.parse(fs.readFileSync(path.join(PRESETS_DIR, f), "utf-8"));
+      out.push({ file: f, name: p.name ?? f, visualizer: p.visualizer ?? "?" });
+    } catch { /* skip unreadable preset */ }
+  }
+  out.sort((a, b) => a.name.localeCompare(b.name));
+  res.json(out);
+});
+
+app.get("/api/presets/:file", (req, res) => {
+  const file = sanitizeName(req.params.file);
+  const full = path.join(PRESETS_DIR, file);
+  if (!file.endsWith(".preset.json") || !fs.existsSync(full)) {
+    return res.status(404).send("no such preset");
+  }
+  res.sendFile(full);
+});
+
+app.post("/api/presets", (req, res) => {
+  const preset = req.body;
+  if (preset?.format !== "music-visualizer-preset" || !preset.name) {
+    return res.status(400).send("not a preset (format/name missing)");
+  }
+  fs.mkdirSync(PRESETS_DIR, { recursive: true });
+  const file = `${sanitizeName(preset.name)}.preset.json`;
+  fs.writeFileSync(
+    path.join(PRESETS_DIR, file), JSON.stringify(preset, null, 2));
+  res.json({ file });
+});
+
+app.delete("/api/presets/:file", (req, res) => {
+  const file = sanitizeName(req.params.file);
+  const full = path.join(PRESETS_DIR, file);
+  if (!file.endsWith(".preset.json") || !fs.existsSync(full)) {
+    return res.status(404).send("no such preset");
+  }
+  fs.unlinkSync(full);
+  res.json({ ok: true });
+});
+
 // ---------------------------------------------------------------------------
 // Render jobs: each job is a renderer/render.js child process; the studio
-// polls /api/jobs/:id for the log tail.
+// polls /api/jobs/:id for the log tail. render.js emits "[render-json] {…}"
+// lines carrying structured metadata (output dir, capture stats) that we
+// fold into the job record.
 // ---------------------------------------------------------------------------
 
 const jobs = new Map();
 
 app.post("/api/render", (req, res) => {
-  const { timeline, visualizer, params, fps, width, height, name } = req.body;
+  const { timeline, visualizer, params, fps, width, height, name, capture } =
+    req.body;
   if (!timeline || !visualizer) {
     return res.status(400).send("timeline and visualizer are required");
   }
@@ -95,16 +186,36 @@ app.post("/api/render", (req, res) => {
     "--fps", String(fps ?? 30),
     "--width", String(width ?? 1920),
     "--height", String(height ?? 1080),
-    "--name", String(name ?? "render").replace(/[^a-zA-Z0-9._-]/g, "_"),
+    "--name", sanitizeName(name ?? "render"),
+    "--capture", String(capture ?? "auto"),
     "--params", JSON.stringify(params ?? {}),
   ];
   const child = spawn(process.execPath, cliArgs, { cwd: ROOT });
-  const job = { status: "running", log: [], startedAt: Date.now() };
+  const job = {
+    status: "running",
+    log: [],
+    startedAt: Date.now(),
+    visualizer,
+    timeline,
+    outDir: null,
+    command: `node ${cliArgs.map((a) => (/[ "{]/.test(a) ? `'${a}'` : a)).join(" ")}`,
+  };
   jobs.set(jobId, job);
 
   const append = (chunk) => {
     for (const line of String(chunk).split(/\r?\n/)) {
-      if (line.trim()) job.log.push(line.trim());
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith("[render-json] ")) {
+        try {
+          const info = JSON.parse(trimmed.slice("[render-json] ".length));
+          if (info.jobDir) job.outDir = info.jobDir;
+          if (info.captureMode) job.captureMode = info.captureMode;
+          if (info.captureFps) job.captureFps = info.captureFps;
+        } catch { /* malformed metadata line — ignore */ }
+        continue; // metadata lines stay out of the human-readable log
+      }
+      job.log.push(trimmed);
     }
     if (job.log.length > 500) job.log.splice(0, job.log.length - 500);
   };
@@ -112,15 +223,66 @@ app.post("/api/render", (req, res) => {
   child.stderr.on("data", append);
   child.on("close", (code) => {
     job.status = code === 0 ? "done" : "failed";
+    job.finishedAt = Date.now();
   });
 
   res.json({ jobId });
+});
+
+app.get("/api/jobs", (_req, res) => {
+  res.json([...jobs.entries()].map(([id, j]) => ({ id, ...j, log: undefined })));
 });
 
 app.get("/api/jobs/:id", (req, res) => {
   const job = jobs.get(req.params.id);
   if (!job) return res.status(404).send("no such job");
   res.json(job);
+});
+
+// Render history survives server restarts: every finished render leaves a
+// render-info.json in its output folder; failed in-session jobs are merged in.
+app.get("/api/renders", (_req, res) => {
+  const rendersDir = path.join(ROOT, config.render.outputDir);
+  const entries = [];
+  if (fs.existsSync(rendersDir)) {
+    for (const dir of fs.readdirSync(rendersDir)) {
+      const infoPath = path.join(rendersDir, dir, "render-info.json");
+      if (!fs.existsSync(infoPath)) continue;
+      try {
+        const info = JSON.parse(fs.readFileSync(infoPath, "utf-8"));
+        entries.push({
+          dir: path.join(config.render.outputDir, dir).replaceAll("\\", "/"),
+          name: info.name,
+          visualizer: info.visualizer,
+          fps: info.fps,
+          width: info.width,
+          height: info.height,
+          totalFrames: info.totalFrames,
+          captureMode: info.captureMode,
+          captureFps: info.captureFps,
+          command: info.command,
+          finishedAt: info.finishedAt,
+          status: "done",
+        });
+      } catch { /* half-written info file — skip */ }
+    }
+  }
+  // Failed jobs never write render-info.json; surface them from memory.
+  for (const [id, j] of jobs) {
+    if (j.status === "failed") {
+      entries.push({
+        dir: j.outDir ?? `(job ${id})`,
+        name: sanitizeName(j.visualizer ?? "render"),
+        visualizer: j.visualizer,
+        command: j.command,
+        status: "failed",
+        finishedAt: j.finishedAt
+          ? new Date(j.finishedAt).toISOString() : undefined,
+      });
+    }
+  }
+  entries.sort((a, b) => String(b.finishedAt).localeCompare(String(a.finishedAt)));
+  res.json(entries.slice(0, 50));
 });
 
 // ---------------------------------------------------------------------------

@@ -30,6 +30,9 @@ export interface TimelineNote {
   bar: number;            // 1-based
   beat: number;           // 1-based, fractional
   unterminated?: boolean;
+  /** Pedal tail was cut short because the same pitch was struck again
+   * on the same channel (format_version >= 1.1). */
+  restruck?: boolean;
 }
 
 export interface TempoMapEntry {

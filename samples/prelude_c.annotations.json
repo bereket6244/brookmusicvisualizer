@@ -1,0 +1,48 @@
+{
+  "format": "music-visualizer-annotations",
+  "version": "1.0",
+  "timeline": "samples/prelude_c.timeline.json",
+  "labels": [
+    {
+      "id": "figure-1",
+      "type": "motif",
+      "name": "Arpeggio figure, tonic (C major)",
+      "start_seconds": 0.0,
+      "end_seconds": 3.64,
+      "track": 0,
+      "tags": ["arpeggio", "tonic"]
+    },
+    {
+      "id": "figure-2",
+      "type": "motif",
+      "name": "Arpeggio figure, supertonic seventh",
+      "start_seconds": 3.64,
+      "end_seconds": 7.27,
+      "track": 0,
+      "tags": ["arpeggio", "predominant"]
+    },
+    {
+      "id": "section-opening",
+      "type": "section",
+      "name": "Opening (bars 1-4)",
+      "start_seconds": 0.0,
+      "end_seconds": 14.55,
+      "tags": ["exposition"]
+    },
+    {
+      "id": "section-return",
+      "type": "section",
+      "name": "Return to tonic (bars 5-8)",
+      "start_seconds": 14.55,
+      "end_seconds": 29.09,
+      "tags": ["resolution"]
+    },
+    {
+      "id": "halfway",
+      "type": "marker",
+      "name": "Halfway point",
+      "start_seconds": 14.55,
+      "tags": ["structure"]
+    }
+  ]
+}

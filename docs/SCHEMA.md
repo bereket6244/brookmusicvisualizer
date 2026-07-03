@@ -16,7 +16,7 @@ for traceability and musical math.
 | field | meaning |
 |---|---|
 | `format` | always `"midicore-timeline"` — sanity marker |
-| `format_version` | schema version of this file (`"1.0"`) |
+| `format_version` | schema version of this file (`"1.1"`; 1.1 added the optional note field `restruck` — purely additive over 1.0) |
 | `meta` | file-level facts (below) |
 | `tempo_map` | every tempo in effect, in order |
 | `time_signature_map` | every time signature in effect, in order |
@@ -97,12 +97,13 @@ Sorted by start time. Each note is one key press:
 | `program` / `instrument` | GM program number and name at note start, or `null` if the file never set one |
 | `start_tick`, `start_seconds` | when the key went down |
 | `end_tick_explicit`, `end_seconds_explicit` | when the key was **released** (note-off) |
-| `end_tick_sounding`, `end_seconds_sounding` | when the note **stopped sounding** — equals the explicit end unless the sustain pedal was down at key release, in which case it extends to the pedal release |
+| `end_tick_sounding`, `end_seconds_sounding` | when the note **stopped sounding** — equals the explicit end unless the sustain pedal was down at key release, in which case it extends to the pedal release (or to a re-strike of the same pitch, whichever comes first) |
 | `duration_ticks_explicit`, `duration_seconds_explicit` | key-held duration |
 | `duration_ticks_sounding`, `duration_seconds_sounding` | audible duration incl. pedal |
 | `sustained` | `true` if the pedal extended this note (`sounding > explicit`) |
 | `bar`, `beat` | musical position of the note start; both 1-based, `beat` fractional (beat 2.5 = halfway between beats 2 and 3) |
 | `unterminated` | present + `true` only for notes force-closed at end of file |
+| `restruck` | present + `true` only when this note's pedal tail was cut short because the same pitch was struck again on the same channel (added in format 1.1) |
 
 **The explicit/sounding pair is the point of this format.** A pianist can
 tap a key for 50 ms while the pedal lets it ring for four seconds; a

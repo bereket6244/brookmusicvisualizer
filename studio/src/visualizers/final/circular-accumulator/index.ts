@@ -1,19 +1,24 @@
 /**
- * Circular Accumulator — the required demo visualizer.
+ * Circular Accumulator — the flagship demo visualizer.
  *
  * One circle per note; the image accumulates (nothing ever fades).
  *   - Angle:  note start time mapped over the whole piece to 360°,
- *             starting at 12 o'clock, COUNTERCLOCKWISE (documented choice,
- *             matching the user's earlier static experiment).
+ *             starting at 12 o'clock, CLOCKWISE by default (changed from
+ *             the first pass's counterclockwise at the owner's request;
+ *             a `direction` param keeps CCW available).
  *   - Radius from center: pitch distance from middle C (60). Middle C sits
  *     at `baseRadius` (~200 design px); higher notes farther out, lower
- *     notes inward, clamped so extremes stay visible and in frame.
+ *     notes inward but never closer than `minRadial`, so the center stays
+ *     visibly empty instead of collapsing into a blob.
  *   - Circle size: starts as a dot at note-on and grows while the note
- *     sounds. Two layers make the two duration kinds distinguishable:
- *       core (opaque disc)      grows only while the KEY IS HELD
- *       halo (translucent disc) keeps growing while the SUSTAIN PEDAL
- *                               carries the note after note-off
- *     Both freeze at their final size forever after the note stops.
+ *     sounds. Two layers keep the two duration kinds distinguishable:
+ *       core (opaque disc)      grows at `heldGrowthPerSecond` ONLY while
+ *                               the key is held, capped at `maxCoreRadius`
+ *       halo (translucent ring) grows at `sustainGrowthPerSecond` while
+ *                               the SUSTAIN PEDAL carries the note after
+ *                               note-off, capped at maxSustainExtraRadius
+ *     Both freeze at their final size forever after the note stops. The
+ *     caps are what keep long pedal holds from flooding the image.
  *
  * All geometry is computed in a 1080-tall "design space" and the camera
  * scales it to the actual output size, so a 1280x720 preview and a
@@ -41,29 +46,63 @@ const definition: VisualizerDefinition = {
   name: "Circular Accumulator",
   description:
     "Cumulative circle-per-note portrait of the whole piece. Angle = start "
-    + "time (counterclockwise from top), distance from center = pitch vs "
-    + "middle C, size = sounding duration. Opaque core grows while the key "
-    + "is held; translucent halo keeps growing while the sustain pedal "
-    + "carries the note.",
+    + "time (clockwise from top), distance from center = pitch vs middle C, "
+    + "size = sounding duration. Opaque core grows while the key is held; "
+    + "translucent halo grows while the sustain pedal carries the note. "
+    + "Growth is capped so long holds stay readable.",
   renderMode: "3d",
   params: [
+    // -- Layout ---------------------------------------------------------------
+    { key: "direction", label: "Direction", type: "select", group: "Layout",
+      default: "clockwise", options: ["clockwise", "counterclockwise"],
+      description: "Which way time travels around the circle (from 12 o'clock)." },
     { key: "baseRadius", label: "Middle C radius (px)", type: "number",
-      default: 200, min: 50, max: 400, step: 10 },
+      group: "Layout", default: 220, min: 80, max: 400, step: 10,
+      description: "Distance from center where middle C (pitch 60) sits." },
     { key: "pxPerSemitone", label: "Px per semitone", type: "number",
-      default: 7, min: 1, max: 20, step: 0.5 },
-    { key: "minRadial", label: "Min distance from center", type: "number",
-      default: 40, min: 0, max: 200, step: 5 },
+      group: "Layout", default: 7, min: 1, max: 20, step: 0.5,
+      description: "Radial spread per semitone away from middle C." },
+    { key: "minRadial", label: "Inner radius (empty center)", type: "number",
+      group: "Layout", default: 90, min: 0, max: 250, step: 5,
+      description: "Low notes never come closer to the center than this — "
+        + "keeps a clean empty disc in the middle." },
     { key: "maxRadial", label: "Max distance from center", type: "number",
-      default: 500, min: 200, max: 540, step: 5 },
+      group: "Layout", default: 500, min: 200, max: 540, step: 5, advanced: true,
+      description: "High notes are clamped to stay inside the frame." },
+
+    // -- Growth ---------------------------------------------------------------
     { key: "dotRadius", label: "Starting dot radius", type: "number",
-      default: 3, min: 1, max: 10, step: 0.5 },
-    { key: "growthPerSecond", label: "Growth px/sec", type: "number",
-      default: 16, min: 2, max: 60, step: 1 },
+      group: "Growth", default: 2.5, min: 0.5, max: 10, step: 0.5,
+      randomizable: true,
+      description: "Circle radius at the instant the note starts." },
+    { key: "heldGrowthPerSecond", label: "Held growth px/sec", type: "number",
+      group: "Growth", default: 11, min: 1, max: 60, step: 1, randomizable: true,
+      description: "Core growth rate while the key is physically held." },
+    { key: "maxCoreRadius", label: "Max core radius", type: "number",
+      group: "Growth", default: 26, min: 4, max: 120, step: 1, randomizable: true,
+      description: "Cap on the opaque core — prevents blob overlap." },
+    { key: "sustainGrowthPerSecond", label: "Sustain growth px/sec",
+      type: "number", group: "Growth", default: 8, min: 0, max: 40, step: 1,
+      randomizable: true,
+      description: "Halo growth rate while only the pedal holds the note." },
+    { key: "maxSustainExtraRadius", label: "Max sustain halo extra",
+      type: "number", group: "Growth", default: 18, min: 0, max: 100, step: 1,
+      randomizable: true,
+      description: "Cap on how far the pedal halo extends past the core." },
+
+    // -- Color ----------------------------------------------------------------
+    { key: "colorMode", label: "Color by", type: "select", group: "Color",
+      default: "pitchClass", options: ["pitchClass", "track"], randomizable: true,
+      description: "Pitch class = one hue per note letter; track = one hue "
+        + "per MIDI track." },
+    { key: "coreOpacity", label: "Circle opacity", type: "number",
+      group: "Color", default: 0.92, min: 0.1, max: 1, step: 0.02,
+      randomizable: true,
+      description: "Slightly under 1 lets dense passages layer readably." },
     { key: "haloOpacity", label: "Sustain halo opacity", type: "number",
-      default: 0.35, min: 0.05, max: 1, step: 0.05 },
-    { key: "colorMode", label: "Color by", type: "select",
-      default: "pitchClass", options: ["pitchClass", "track"] },
-    { key: "background", label: "Background", type: "color",
+      group: "Color", default: 0.28, min: 0.05, max: 1, step: 0.02,
+      randomizable: true },
+    { key: "background", label: "Background", type: "color", group: "Color",
       default: BACKGROUND },
   ],
   create(ctx) {
@@ -92,8 +131,8 @@ class CircularAccumulator implements VisualizerInstance {
     this.ctx = ctx;
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
-      // Keeps the drawing buffer readable after render — required for
-      // Playwright screenshots to reliably capture the last frame.
+      // Keeps the drawing buffer readable after render — required for both
+      // Playwright screenshots and the canvas.toDataURL capture path.
       preserveDrawingBuffer: true,
     });
     this.renderer.setPixelRatio(1); // determinism: never scale by devicePixelRatio
@@ -137,17 +176,18 @@ class CircularAccumulator implements VisualizerInstance {
     const p = this.ctx.params;
     const total = this.ctx.engine.durationSeconds || 1;
     const notes = this.ctx.engine.notes;
+    // Clockwise = angle DEcreases as time advances (screen-math coords:
+    // x right, y up, 12 o'clock = +90°). CCW increases.
+    const spin = p.direction === "counterclockwise" ? 1 : -1;
 
     for (let i = 0; i < notes.length; i++) {
       const note = notes[i];
 
-      // Angular position: piece progress -> full turn, counterclockwise
-      // starting from the top (+y axis). In math coords (x right, y up)
-      // the top is +90°, and CCW means the angle increases with time.
       const progress = note.start_seconds / total;
-      const angle = Math.PI / 2 + progress * Math.PI * 2;
+      const angle = Math.PI / 2 + spin * progress * Math.PI * 2;
 
-      // Radial position: linear in semitones from middle C, clamped.
+      // Radial position: linear in semitones from middle C, clamped so low
+      // notes keep out of the empty center and high notes stay in frame.
       const radial = clamp(
         Number(p.baseRadius) + (note.pitch - 60) * Number(p.pxPerSemitone),
         Number(p.minRadial),
@@ -163,7 +203,9 @@ class CircularAccumulator implements VisualizerInstance {
       const halo = new THREE.Mesh(
         this.geometry, this.material(color, Number(p.haloOpacity)),
       );
-      const core = new THREE.Mesh(this.geometry, this.material(color, 1));
+      const core = new THREE.Mesh(
+        this.geometry, this.material(color, Number(p.coreOpacity)),
+      );
       // Later notes render on top of earlier ones; each note's core sits
       // above its own halo.
       halo.renderOrder = i * 2;
@@ -178,8 +220,12 @@ class CircularAccumulator implements VisualizerInstance {
   }
 
   renderAtTime(t: number): void {
-    const dot = Number(this.ctx.params.dotRadius);
-    const growth = Number(this.ctx.params.growthPerSecond);
+    const p = this.ctx.params;
+    const dot = Number(p.dotRadius);
+    const heldGrowth = Number(p.heldGrowthPerSecond);
+    const maxCore = Number(p.maxCoreRadius);
+    const susGrowth = Number(p.sustainGrowthPerSecond);
+    const maxSusExtra = Number(p.maxSustainExtraRadius);
 
     for (const { note, core, halo } of this.visuals) {
       if (t < note.start_seconds) {
@@ -195,14 +241,19 @@ class CircularAccumulator implements VisualizerInstance {
       const soundElapsed =
         Math.min(t, note.end_seconds_sounding) - note.start_seconds;
 
-      const coreR = dot + growth * heldElapsed;
-      const haloR = dot + growth * soundElapsed;
+      // Capped growth: cores stop at maxCoreRadius no matter how long the
+      // key is held; the pedal halo adds at most maxSustainExtraRadius.
+      const coreR = Math.min(dot + heldGrowth * heldElapsed, maxCore);
+      const sustainExtra = Math.min(
+        susGrowth * Math.max(0, soundElapsed - heldElapsed),
+        maxSusExtra,
+      );
+      const haloR = coreR + sustainExtra;
 
       core.visible = true;
       core.scale.setScalar(coreR);
-      // The halo only becomes visible once it outgrows the core, i.e. when
-      // the sustain pedal is carrying the note beyond the key release.
-      halo.visible = haloR > coreR + 0.01;
+      // The halo only shows once the pedal actually extends the note.
+      halo.visible = sustainExtra > 0.01;
       if (halo.visible) halo.scale.setScalar(haloR);
     }
 

@@ -14,6 +14,9 @@ __pycache__/
 # Generated outputs (frames, videos, uploads, audio, logs)
 output/
 
+# Presets are small JSON worth keeping/committing; only ignore nothing here.
+# (presets/.gitkeep keeps the folder present in fresh clones)
+
 # Gallery media is user-curated; keep the manifest, ignore big files
 gallery/media/*
 !gallery/media/.gitkeep

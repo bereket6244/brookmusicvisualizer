@@ -6,14 +6,22 @@
  *                           [--fps 30] [--width 1920] [--height 1080]
  *                           [--name myrender] [--tail 1.5]
  *                           [--params '{"colorMode":"track"}']
+ *                           [--capture auto|canvas|screenshot]
  *                           [--keep-frames] [--audio [--midi path.mid]]
  *
  * Pipeline:
  *   1. build studio/dist if missing (same visualizer code as the studio)
  *   2. serve dist on an ephemeral local port
  *   3. Playwright opens render.html at the exact output resolution
- *   4. for each frame: t = frame / fps -> window.__viz.renderFrame(t)
- *      -> PNG screenshot (NO real-time playback, NO screen recording)
+ *   4. for each frame: t = frame / fps -> draw + capture a PNG
+ *      (NO real-time playback, NO screen recording). Two capture modes:
+ *        canvas      page-side canvas.toDataURL -> base64 -> file. Fast
+ *                    (no compositor wait, no CDP screenshot round-trip);
+ *                    needs the visualizer to draw one full-size canvas
+ *                    with preserveDrawingBuffer (all bundled ones do).
+ *        screenshot  Playwright page.screenshot per frame. Slower but
+ *                    works for ANY page content. The reliable fallback.
+ *        auto        try canvas once; on any problem use screenshot.
  *   5. ffmpeg assembles frames -> H.264 MP4
  *   6. optional: fluidsynth renders the source MIDI to WAV, ffmpeg muxes
  *      it in; any audio failure is logged and the silent MP4 remains
@@ -21,6 +29,8 @@
  *      piece — don't hoard them by accident)
  *
  * Output lands in output/renders/<name>-<timestamp>/.
+ * Lines prefixed "[render-json]" are machine-readable job metadata for
+ * the studio backend (renderer/server.js) — keep them stable.
  */
 
 import { spawnSync } from "node:child_process";
@@ -56,8 +66,8 @@ if (args.help || !args.timeline) {
   console.log(
     "usage: node renderer/render.js --timeline <timeline.json> "
     + "[--visualizer id] [--fps n] [--width n] [--height n] [--name s] "
-    + "[--tail s] [--params json] [--out dir] [--keep-frames] "
-    + "[--audio] [--midi file.mid]");
+    + "[--tail s] [--params json] [--out dir] [--capture auto|canvas|screenshot] "
+    + "[--keep-frames] [--audio] [--midi file.mid]");
   process.exit(args.help ? 0 : 1);
 }
 
@@ -72,15 +82,25 @@ const settings = {
   name: args.name ?? "render",
   outDir: fromRoot(args.out ?? config.render.outputDir),
   params: args.params ? JSON.parse(args.params) : {},
+  capture: args.capture ?? config.render.capture ?? "auto",
   keepFrames: Boolean(args["keep-frames"] ?? config.render.keepFrames),
   audio: Boolean(args.audio),
   midi: args.midi ? fromRoot(args.midi) : null,
 };
+if (!["auto", "canvas", "screenshot"].includes(settings.capture)) {
+  console.error(`invalid --capture "${settings.capture}" (auto|canvas|screenshot)`);
+  process.exit(1);
+}
 
 // ---------------------------------------------------------------------------
 
 function log(msg) {
   console.log(`[render] ${msg}`);
+}
+
+/** Machine-readable status line the studio backend parses (job history). */
+function logJson(obj) {
+  console.log(`[render-json] ${JSON.stringify(obj)}`);
 }
 
 function ensureStudioBuilt() {
@@ -107,6 +127,23 @@ function serveDist() {
   });
 }
 
+/** Load an optional *.annotations.json sitting next to the timeline, so a
+ * render sees exactly what the studio preview saw. */
+function loadAnnotationsSidecar(timelinePath) {
+  const sidecar = timelinePath.replace(/\.timeline\.json$/, ".annotations.json");
+  if (sidecar === timelinePath || !fs.existsSync(sidecar)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(sidecar, "utf-8"));
+    if (parsed?.format === "music-visualizer-annotations") {
+      log(`annotations: ${path.relative(ROOT, sidecar)} (${parsed.labels?.length ?? 0} labels)`);
+      return parsed;
+    }
+  } catch (err) {
+    log(`annotations sidecar ignored (parse error: ${err.message})`);
+  }
+  return null;
+}
+
 async function main() {
   const timeline = JSON.parse(fs.readFileSync(settings.timeline, "utf-8"));
   const duration = timeline.meta.duration_seconds;
@@ -121,9 +158,11 @@ async function main() {
   log(`timeline:   ${path.relative(ROOT, settings.timeline)}`);
   log(`visualizer: ${settings.visualizer}`);
   log(`resolution: ${settings.width}x${settings.height} @ ${settings.fps} fps`);
+  log(`capture:    ${settings.capture}`);
   log(`duration:   ${duration.toFixed(2)}s + ${settings.tail}s tail `
     + `= ${totalFrames} frames`);
   log(`output:     ${path.relative(ROOT, jobDir)}`);
+  logJson({ event: "start", jobDir: path.relative(ROOT, jobDir), totalFrames });
 
   ensureStudioBuilt();
   const { server, port } = await serveDist();
@@ -136,6 +175,8 @@ async function main() {
       "--disable-lcd-text",
     ],
   });
+  let captureMode = settings.capture;
+  let captureFps = 0;
   try {
     const page = await browser.newPage({
       viewport: { width: settings.width, height: settings.height },
@@ -152,18 +193,57 @@ async function main() {
         params: settings.params,
         width: settings.width,
         height: settings.height,
+        annotations: loadAnnotationsSidecar(settings.timeline),
       },
     );
 
+    // -- resolve capture mode -------------------------------------------------
+    // "auto" probes the fast canvas path once (frame 0, thrown away) and
+    // falls back to screenshots on any error or wrong-size canvas.
+    if (captureMode !== "screenshot") {
+      try {
+        const probe = await page.evaluate(() => {
+          const url = window.__viz.captureFrame(0);
+          const c = document.querySelector("#stage canvas");
+          return { ok: url.startsWith("data:image/png"), w: c?.width, h: c?.height };
+        });
+        if (!probe.ok || probe.w !== settings.width || probe.h !== settings.height) {
+          throw new Error(
+            `canvas is ${probe.w}x${probe.h}, expected ${settings.width}x${settings.height}`);
+        }
+        captureMode = "canvas";
+      } catch (err) {
+        if (settings.capture === "canvas") {
+          throw new Error(`canvas capture unavailable: ${err.message} `
+            + "(use --capture screenshot)");
+        }
+        log(`canvas capture unavailable (${err.message}) — using screenshots`);
+        captureMode = "screenshot";
+      }
+    }
+    log(`capture mode resolved: ${captureMode}`);
+
+    // -- frame loop -------------------------------------------------------------
     const startedAt = Date.now();
     for (let frame = 0; frame < totalFrames; frame++) {
       const t = frame / settings.fps;
-      await page.evaluate((tt) => window.__viz.renderFrame(tt), t);
-      await page.screenshot({
-        path: path.join(framesDir,
-          `frame_${String(frame).padStart(6, "0")}.png`),
-        clip: { x: 0, y: 0, width: settings.width, height: settings.height },
-      });
+      const framePath = path.join(
+        framesDir, `frame_${String(frame).padStart(6, "0")}.png`);
+      if (captureMode === "canvas") {
+        // One evaluate round-trip returns the PNG as base64; decoding and
+        // writing on the Node side keeps the page loop tight.
+        const dataUrl = await page.evaluate(
+          (tt) => window.__viz.captureFrame(tt), t);
+        fs.writeFileSync(
+          framePath,
+          Buffer.from(dataUrl.slice("data:image/png;base64,".length), "base64"));
+      } else {
+        await page.evaluate((tt) => window.__viz.renderFrame(tt), t);
+        await page.screenshot({
+          path: framePath,
+          clip: { x: 0, y: 0, width: settings.width, height: settings.height },
+        });
+      }
       if (frame % (settings.fps * 5) === 0 && frame > 0) {
         const rate = frame / ((Date.now() - startedAt) / 1000);
         const eta = Math.round((totalFrames - frame) / rate);
@@ -171,8 +251,10 @@ async function main() {
           + `~${eta}s left)`);
       }
     }
-    log(`captured ${totalFrames} frames in `
-      + `${((Date.now() - startedAt) / 1000).toFixed(1)}s`);
+    const captureSeconds = (Date.now() - startedAt) / 1000;
+    captureFps = totalFrames / captureSeconds;
+    log(`captured ${totalFrames} frames in ${captureSeconds.toFixed(1)}s `
+      + `(${captureFps.toFixed(1)} frames/sec, mode: ${captureMode})`);
   } finally {
     await browser.close();
     server.close();
@@ -210,6 +292,20 @@ async function main() {
   }
 
   // -- provenance + cleanup ---------------------------------------------------
+  // The reproduction command mirrors the studio's "Copy cmd" output.
+  const command = [
+    "node renderer/render.js",
+    `--timeline "${path.relative(ROOT, settings.timeline).replaceAll("\\", "/")}"`,
+    `--visualizer ${settings.visualizer}`,
+    `--fps ${settings.fps}`,
+    `--width ${settings.width}`,
+    `--height ${settings.height}`,
+    `--name ${settings.name}`,
+    settings.capture !== "auto" ? `--capture ${settings.capture}` : "",
+    Object.keys(settings.params).length
+      ? `--params '${JSON.stringify(settings.params)}'` : "",
+  ].filter(Boolean).join(" ");
+
   fs.writeFileSync(
     path.join(jobDir, "render-info.json"),
     JSON.stringify(
@@ -220,6 +316,9 @@ async function main() {
         midi: settings.midi ? path.relative(ROOT, settings.midi) : null,
         totalFrames,
         durationSeconds: duration,
+        captureMode,
+        captureFps: Number(captureFps.toFixed(2)),
+        command,
         audio: audioResult ?? "not requested",
         finishedAt: new Date().toISOString(),
       },
@@ -230,6 +329,12 @@ async function main() {
     fs.rmSync(framesDir, { recursive: true, force: true });
     log("frames deleted (use --keep-frames to keep the PNGs)");
   }
+  logJson({
+    event: "done",
+    jobDir: path.relative(ROOT, jobDir),
+    captureMode,
+    captureFps: Number(captureFps.toFixed(2)),
+  });
   log(`DONE -> ${silentPath}`);
 }
 

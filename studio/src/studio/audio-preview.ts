@@ -7,6 +7,13 @@
  * play we map "timeline seconds" onto AudioContext time and schedule
  * every upcoming note sample-accurately. It is NOT the audio used for
  * final renders (that path is FluidSynth + a SoundFont; see docs).
+ *
+ * Modes: "off" | "synth". A SoundFont-backed browser mode was evaluated
+ * and deliberately NOT included: the free WASM synth options are heavy
+ * (multi-MB), need a bundled SoundFont, and add nothing to render
+ * correctness (renders never use preview audio). docs/AUDIO_SETUP.md
+ * covers the real audio path. driftSeconds() exposes audio-vs-visual
+ * clock skew for the studio's inspector.
  */
 
 import type { TimingEngine } from "../core/timing-engine";
@@ -25,17 +32,30 @@ export class AudioPreview {
   /** AudioContext time corresponding to timeline t=0 for this play run. */
   private anchor = 0;
   private scheduledUpTo = 0;
+  private running = false;
 
-  enabled = false;
+  mode: "off" | "synth" = "off";
 
   setEngine(engine: TimingEngine | null): void {
     this.stop();
     this.engine = engine;
   }
 
+  /**
+   * Timeline-time skew between the audio clock and the given visual time
+   * (positive = audio ahead). Null when audio is off or not playing.
+   * The two clocks are anchored together at play start, so this mostly
+   * measures wall-clock vs AudioContext drift over a long preview.
+   */
+  driftSeconds(visualT: number): number | null {
+    if (!this.running || !this.ctx) return null;
+    const audioT = this.ctx.currentTime - this.anchor;
+    return audioT - visualT;
+  }
+
   /** Begin audible playback from timeline time `fromT`. */
   start(fromT: number): void {
-    if (!this.enabled || !this.engine) return;
+    if (this.mode === "off" || !this.engine) return;
     if (!this.ctx) {
       this.ctx = new AudioContext();
       this.master = this.ctx.createGain();
@@ -43,6 +63,7 @@ export class AudioPreview {
       this.master.connect(this.ctx.destination);
     }
     void this.ctx.resume();
+    this.running = true;
     this.anchor = this.ctx.currentTime + 0.05 - fromT;
     this.scheduledUpTo = fromT;
     // Rolling scheduler: keep ~2s of notes queued ahead of the playhead.
@@ -87,6 +108,7 @@ export class AudioPreview {
 
   /** Silence and cancel everything scheduled (pause/seek/stop). */
   stop(): void {
+    this.running = false;
     if (this.scheduleTimer !== null) {
       clearInterval(this.scheduleTimer);
       this.scheduleTimer = null;

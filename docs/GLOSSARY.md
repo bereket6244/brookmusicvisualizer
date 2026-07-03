@@ -97,10 +97,14 @@ ring.
 ### Sustain pedal / CC64
 Controller change #64 is the sustain (damper) pedal: value ≥ 64 = pedal
 down, < 64 = pedal up. While down, notes keep ringing after their key is
-released, until the pedal comes up. The parser turns pedal data into
-per-note `end_*_sounding` extensions and keeps the raw events in
-`sustain_events`. Files without CC64 data simply have
-`has_sustain_data: false`.
+released, until the pedal comes up — or until the same pitch is struck
+again (a *re-strike*: the new hammer replaces the old vibration; such cut
+notes are flagged `restruck`). The parser turns pedal data into per-note
+`end_*_sounding` extensions and keeps the raw events (including
+*half-pedal* values between the extremes) in `sustain_events`. For
+durations the standard ≥64 threshold is used; the in-between values are
+preserved for visualizers that want them. Files without CC64 data simply
+have `has_sustain_data: false`.
 
 ### SoundFont
 A file of sampled instrument sounds (`.sf2`) that a synthesizer like

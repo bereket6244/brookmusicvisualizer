@@ -5,12 +5,17 @@ music visualization videos.
 
 Pipeline: **MIDI → documented timeline JSON → timing engine → visualizer →
 PNG frames (Playwright) → MP4 (ffmpeg)**, with a browser studio for
-interactive preview. The demo visualizer draws one growing circle per note,
-accumulating into a circular portrait of the whole piece.
+interactive preview, adaptive per-visualizer controls, presets, and seeded
+randomization. Two demo visualizers ship: a cumulative circular portrait
+of the whole piece, and a seeded-noise particle field.
 
 Deeper documentation lives in [docs/GUIDE.md](docs/GUIDE.md) (architecture,
-schema, writing visualizers, render pipeline, audio setup). Field-by-field
-timeline format docs: [docs/SCHEMA.md](docs/SCHEMA.md) and
+schema, writing visualizers, render pipeline) plus
+[docs/STUDIO.md](docs/STUDIO.md) (studio controls & presets),
+[docs/CREATIVE_WORKFLOW.md](docs/CREATIVE_WORKFLOW.md) (developing
+visualizer ideas), [docs/AUDIO_SETUP.md](docs/AUDIO_SETUP.md) and
+[docs/ANNOTATIONS.md](docs/ANNOTATIONS.md). Field-by-field timeline format
+docs: [docs/SCHEMA.md](docs/SCHEMA.md) and
 [docs/GLOSSARY.md](docs/GLOSSARY.md).
 
 ## Install (Windows)
@@ -55,6 +60,8 @@ npm run render -- --timeline samples/prelude_c.timeline.json --visualizer circul
 | Launch studio | `npm run dev` |
 | Render silent video | `npm run render -- --timeline <timeline.json> [--fps 30 --width 1920 --height 1080]` |
 | Render with audio (needs FluidSynth + SoundFont, see guide) | add `--audio` |
+| Check the audio setup | `npm run check:audio` |
+| Faster frame capture | add `--capture canvas` (default `auto` picks it when possible) |
 | Serve the gallery | `npm run gallery` |
 
 ## Using your own MIDI
@@ -72,8 +79,9 @@ npm run render -- --timeline output/mysong.timeline.json
 midicore/   reusable Python package: MIDI parser, timing engine, CLI, tests
 studio/     Vite + TypeScript + Three.js: studio UI, render page, visualizers
 renderer/   Node: studio backend, Playwright frame capture, ffmpeg assembly
-samples/    generated sample MIDI files + timelines
-docs/       guide, schema docs, glossary, limitations log
+samples/    generated sample MIDI files + timelines (+ demo annotations)
+presets/    saved visualizer presets (small JSON, committable)
+docs/       guides (developer, studio, creative workflow, audio, annotations)
 gallery/    optional static gallery for finished renders (isolated)
 output/     generated files (gitignored)
 ```

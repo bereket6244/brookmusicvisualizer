@@ -1,0 +1,37 @@
+{
+  "format": "music-visualizer-preset",
+  "version": "1.0",
+  "name": "noise-constellation",
+  "visualizer": "noise-orbit-particles",
+  "params": {
+    "direction": "clockwise",
+    "middleCRadius": 230,
+    "pxPerSemitone": 6,
+    "innerRadius": 80,
+    "maxRadial": 510,
+    "zSpread": 40,
+    "noiseStrength": 34,
+    "noiseSpeed": 0.35,
+    "noiseScale": 1,
+    "velocityInfluence": 1.1,
+    "activePulse": 2.0,
+    "sustainPulse": 1.0,
+    "restingDrift": 0.12,
+    "particleSize": 9,
+    "lowNoteColor": "#355c7d",
+    "highNoteColor": "#f8b195",
+    "opacity": 0.95,
+    "backgroundColor": "#0b1020",
+    "seed": 1234
+  },
+  "render": {
+    "fps": 30,
+    "width": 1920,
+    "height": 1080,
+    "name": "noise-constellation",
+    "capture": "auto"
+  },
+  "timeline": "samples/prelude_c.timeline.json",
+  "created_at": "2026-07-03T15:30:00.000Z",
+  "note": "Slow constellation drift with strong held-note pulses. Seed 1234 — change the seed for a different (still reproducible) sky."
+}

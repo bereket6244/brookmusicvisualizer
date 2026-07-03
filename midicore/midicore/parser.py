@@ -34,6 +34,33 @@ from . import notes as notedata
 DEFAULT_TEMPO_US = 500_000  # MIDI default: 120 BPM (microseconds per quarter note)
 
 
+class SMPTETimebaseError(ValueError):
+    """Raised for SMPTE-timebase MIDI files (division high bit set).
+
+    Almost all MIDI files use PPQ (musical) timing. SMPTE division encodes
+    wall-clock frames-per-second instead; our tempo-map math would silently
+    produce wrong seconds for such files, so we refuse loudly instead of
+    parsing them incorrectly.
+    """
+
+
+def _reject_smpte_timebase(path: str) -> None:
+    """Inspect the raw MThd header: bytes 12-13 are the division field; a
+    set high bit means SMPTE timing. Checked before mido parses so the
+    error is ours and explicit (mido's own handling of SMPTE is spotty)."""
+    with open(path, "rb") as f:
+        header = f.read(14)
+    if len(header) >= 14 and header[:4] == b"MThd":
+        division = int.from_bytes(header[12:14], "big")
+        if division & 0x8000:
+            fps = 256 - (division >> 8)  # two's complement of the high byte
+            raise SMPTETimebaseError(
+                f"{path}: SMPTE-timebase MIDI files ({fps} fps division) are "
+                "not supported. Re-export the file with musical (PPQ) timing "
+                "— nearly every DAW/notation tool does this by default."
+            )
+
+
 # --------------------------------------------------------------------------
 # Tempo map
 # --------------------------------------------------------------------------
@@ -162,6 +189,7 @@ class _RawTrack:
 
 def parse_midi(path: str) -> dict:
     """Parse a MIDI file into the normalized timeline dict (see docs/SCHEMA.md)."""
+    _reject_smpte_timebase(path)
     mid = mido.MidiFile(path)
     ppq = mid.ticks_per_beat
 
@@ -282,6 +310,41 @@ def parse_midi(path: str) -> dict:
         return lst[i][1] if i >= 0 else None
 
     # ----------------------------------------------------------------------
+    # Sustain extension + re-strike realism
+    # ----------------------------------------------------------------------
+    # Pass 1: extend every note to the pedal release on its channel.
+    for rec in finished:
+        release = sustain_release_after(rec["channel"], rec["end_tick"])
+        # Only extend if the pedal release is actually later than the key
+        # release; a pedal that comes up at the same tick changes nothing.
+        rec["sustained"] = release is not None and release > rec["end_tick"]
+        rec["end_tick_sounding"] = release if rec["sustained"] else rec["end_tick"]
+
+    # Pass 2: re-striking a pitch cuts the pedal tail of the previous note
+    # of that pitch. On a real piano the hammer re-uses the string, so the
+    # old vibration is replaced at the moment of the new attack. Grouped by
+    # (channel, pitch) — the pedal and the string are per channel, not per
+    # track. Only the PEDAL tail is cut (start > end_tick): two genuinely
+    # overlapping held notes of the same pitch are left to FIFO pairing.
+    by_pitch: dict[tuple[int, int], list[dict]] = {}
+    for rec in finished:
+        by_pitch.setdefault((rec["channel"], rec["pitch"]), []).append(rec)
+    for recs in by_pitch.values():
+        recs.sort(key=lambda r: r["start_tick"])
+        for i, rec in enumerate(recs):
+            if not rec["sustained"]:
+                continue
+            for nxt in recs[i + 1:]:
+                if rec["end_tick"] < nxt["start_tick"] < rec["end_tick_sounding"]:
+                    rec["end_tick_sounding"] = nxt["start_tick"]
+                    rec["restruck"] = True
+                    # If the cut lands exactly at the key release the pedal
+                    # effectively added nothing.
+                    if rec["end_tick_sounding"] <= rec["end_tick"]:
+                        rec["sustained"] = False
+                    break
+
+    # ----------------------------------------------------------------------
     # Build normalized note records
     # ----------------------------------------------------------------------
     finished.sort(key=lambda r: (r["start_tick"], r["pitch"], r["track"]))
@@ -289,11 +352,8 @@ def parse_midi(path: str) -> dict:
     for i, rec in enumerate(finished):
         start_tick = rec["start_tick"]
         end_tick_explicit = rec["end_tick"]
-        release = sustain_release_after(rec["channel"], end_tick_explicit)
-        # Only extend if the pedal release is actually later than the key
-        # release; a pedal that comes up at the same tick changes nothing.
-        sustained = release is not None and release > end_tick_explicit
-        end_tick_sounding = release if sustained else end_tick_explicit
+        sustained = rec["sustained"]
+        end_tick_sounding = rec["end_tick_sounding"]
 
         start_s = tempo_map.tick_to_seconds(start_tick)
         end_exp_s = tempo_map.tick_to_seconds(end_tick_explicit)
@@ -330,6 +390,10 @@ def parse_midi(path: str) -> dict:
         }
         if rec.get("unterminated"):
             note["unterminated"] = True
+        if rec.get("restruck"):
+            # This note's pedal tail was cut short by a re-strike of the
+            # same pitch (see pass 2 above).
+            note["restruck"] = True
         notes_json.append(note)
 
     # Track summaries
@@ -369,7 +433,9 @@ def parse_midi(path: str) -> dict:
 
     return {
         "format": "midicore-timeline",
-        "format_version": "1.0",
+        # 1.1: added optional note field "restruck" (pedal tail cut by a
+        # re-strike of the same pitch). Purely additive over 1.0.
+        "format_version": "1.1",
         "meta": {
             "source_file": os.path.basename(path),
             "parsed_at": _time.strftime("%Y-%m-%dT%H:%M:%S"),

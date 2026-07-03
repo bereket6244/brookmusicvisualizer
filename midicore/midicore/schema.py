@@ -118,6 +118,9 @@ def timeline_json_schema() -> dict:
         "bar": integer(1),
         "beat": num(),
         "unterminated": {"type": "boolean"},
+        "restruck": {"type": "boolean",
+                     "description": "pedal tail cut by a re-strike of the "
+                                    "same pitch on the same channel"},
     }
 
     return {
@@ -193,8 +196,8 @@ def timeline_json_schema() -> dict:
                 "items": {
                     "type": "object",
                     "required": [k for k in note_props if k not in
-                                 ("unterminated", "program", "instrument",
-                                  "track_name")],
+                                 ("unterminated", "restruck", "program",
+                                  "instrument", "track_name")],
                     "properties": note_props,
                 },
             },

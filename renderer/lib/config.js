@@ -26,6 +26,9 @@ export function loadConfig() {
       tailSeconds: 1.5,
       outputDir: "output/renders",
       keepFrames: false,
+      // "auto" probes the fast canvas capture and falls back to Playwright
+      // screenshots; see renderer/render.js and docs/GUIDE.md.
+      capture: "auto",
     },
   };
   try {

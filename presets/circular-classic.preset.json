@@ -1,0 +1,32 @@
+{
+  "format": "music-visualizer-preset",
+  "version": "1.0",
+  "name": "circular-classic",
+  "visualizer": "circular-accumulator",
+  "params": {
+    "direction": "clockwise",
+    "baseRadius": 220,
+    "pxPerSemitone": 7,
+    "minRadial": 90,
+    "maxRadial": 500,
+    "dotRadius": 2.5,
+    "heldGrowthPerSecond": 11,
+    "maxCoreRadius": 26,
+    "sustainGrowthPerSecond": 8,
+    "maxSustainExtraRadius": 18,
+    "colorMode": "pitchClass",
+    "coreOpacity": 0.92,
+    "haloOpacity": 0.28,
+    "background": "#0b1020"
+  },
+  "render": {
+    "fps": 30,
+    "width": 1920,
+    "height": 1080,
+    "name": "circular-classic",
+    "capture": "auto"
+  },
+  "timeline": "samples/prelude_c.timeline.json",
+  "created_at": "2026-07-03T15:30:00.000Z",
+  "note": "The tuned second-pass defaults: clockwise, empty center, capped growth. A good starting point for any piano piece."
+}

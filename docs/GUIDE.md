@@ -10,11 +10,17 @@ Contents:
 3. [Timeline JSON](#timeline-json)
 4. [Timing engine usage](#timing-engine-usage)
 5. [Visualizer interface](#visualizer-interface)
-6. [Creating a new visualizer](#creating-a-new-visualizer)
-7. [Promoting dev → final](#promoting-dev--final)
-8. [Render pipeline](#render-pipeline)
-9. [Audio rendering](#audio-rendering)
-10. [The gallery](#the-gallery)
+6. [Visualizer parameters](#visualizer-parameters)
+7. [Creating a new visualizer](#creating-a-new-visualizer)
+8. [Promoting dev → final](#promoting-dev--final)
+9. [Render pipeline](#render-pipeline)
+10. [Audio rendering](#audio-rendering)
+11. [The gallery](#the-gallery)
+
+Related guides: [STUDIO.md](STUDIO.md) (studio controls, presets,
+exploration tools) · [CREATIVE_WORKFLOW.md](CREATIVE_WORKFLOW.md) (how to
+develop visualizer ideas) · [ANNOTATIONS.md](ANNOTATIONS.md) (musical
+label sidecars) · [AUDIO_SETUP.md](AUDIO_SETUP.md) (FluidSynth/SoundFont).
 
 ---
 
@@ -96,7 +102,18 @@ implementation):
 - **sustain pedal (CC64)** — value ≥ 64 is down, < 64 is up, merged per
   channel across tracks. Each note carries both its *explicit* (key-held)
   and *sounding* (pedal-extended) end. Files without pedal data simply get
-  `has_sustain_data: false` and identical explicit/sounding values;
+  `has_sustain_data: false` and identical explicit/sounding values.
+  Raw CC64 **values are preserved** in `sustain_events` (half-pedal levels
+  survive; only the down/up decision binarizes at the ≥64 threshold —
+  half-pedaling as a *sound* effect is not modeled);
+- **re-strikes** — striking a pitch again while its previous note is still
+  ringing in the pedal cuts the earlier note's sounding tail at the new
+  attack (like a real piano hammer re-using the string). Such notes are
+  flagged `restruck: true` (format_version 1.1, purely additive);
+- **SMPTE-timebase files are rejected** with a clear
+  `SMPTETimebaseError` — their wall-clock division would silently break
+  tempo math, and PPQ files are the overwhelming norm. Re-export with
+  musical timing if you hit this;
 - unterminated notes (missing note-off) are closed at end-of-file and
   flagged;
 - track names, channels, GM program/instrument names.
@@ -115,7 +132,7 @@ Top-level shape:
 ```json
 {
   "format": "midicore-timeline",
-  "format_version": "1.0",
+  "format_version": "1.1",
   "meta": { "duration_seconds": 29.09, "ticks_per_beat": 480, ... },
   "tempo_map": [ { "tick": 0, "seconds": 0.0, "bpm": 66.0, ... } ],
   "time_signature_map": [ { "tick": 0, "numerator": 4, "denominator": 4, "bar": 1, ... } ],
@@ -159,8 +176,7 @@ A visualizer is a folder under `studio/src/visualizers/dev/<id>/` or
   name: "My Viz",
   description: "…",
   renderMode: "2d" | "3d" | "both",
-  params: [ { key, label, type: "number"|"color"|"boolean"|"select",
-              default, min?, max?, step?, options? } ],
+  params: [ /* ParamSpec[], see "Visualizer parameters" below */ ],
   create(ctx) => VisualizerInstance
 }
 ```
@@ -175,6 +191,8 @@ A visualizer is a folder under `studio/src/visualizers/dev/<id>/` or
   circular-accumulator) so previews match renders.
 - `engine` — the `TimingEngine`.
 - `params` — resolved parameter values (defaults merged with overrides).
+- `annotations` — optional `AnnotationSet` when a sidecar was loaded
+  (see [ANNOTATIONS.md](ANNOTATIONS.md)); may be `undefined`.
 
 The returned `VisualizerInstance` must implement:
 
@@ -191,11 +209,63 @@ Discovery is automatic: `registry.ts` uses Vite's
 list to edit; the folder *is* the registration. Status (`dev`/`final`) is
 derived from the folder path, so it can never lie.
 
+## Visualizer parameters
+
+Each entry in `params` is a `ParamSpec`
+(`studio/src/visualizers/types.ts`); the studio generates its whole
+control panel from these — visualizers never write UI code.
+
+```ts
+{
+  key: "noiseStrength",          // params object key
+  label: "Noise strength (px)",  // control label
+  type: "number",                // see the type table below
+  default: 26,
+  min: 0, max: 120, step: 1,     // number/seed/vec/range bounds
+  options: ["a", "b"],           // select only
+  description: "…",              // tooltip in the studio
+  group: "Motion",               // collapsible section (default "General")
+  advanced: true,                // hidden behind the "show advanced" toggle
+  randomizable: true,            // opt-in for Randomize/Mutate
+}
+```
+
+| type | value shape | studio control |
+|---|---|---|
+| `number` | number | slider + numeric input (slider only when min & max given) |
+| `color` | `"#rrggbb"` | color picker |
+| `boolean` | boolean | checkbox |
+| `select` | one of `options` | dropdown |
+| `vec2` / `vec3` | `[x,y]` / `[x,y,z]` | 2–3 numeric inputs |
+| `range` | `[min,max]` (kept ordered) | numeric pair |
+| `seed` | non-negative integer | integer input + 🎲 new-seed button |
+
+The v1 schema (`number`/`color`/`boolean`/`select`, no group/flags) is a
+strict subset — old visualizers work unchanged.
+
+Conventions that make the exploration tools useful:
+
+- mark a param `randomizable` **only** if a random value can look
+  intentional (colors, rates, noise settings — yes; direction, structural
+  radii, background — usually no);
+- anything using noise/randomness must expose a `seed` param and derive
+  ALL randomness from it (`mulberry32`/`hashString` in
+  `studio/src/visualizers/params.ts`; `createNoise3D(mulberry32(seed))`
+  for simplex noise). Unseeded `Math.random()` in render code is a bug;
+- group related params; put niche ones behind `advanced`.
+
+Presets (`presets/*.preset.json`, managed from the studio or by hand)
+store `{visualizer, params, render, timeline, created_at, note}` — see
+[STUDIO.md](STUDIO.md).
+
 ## Creating a new visualizer
 
 1. Copy `studio/src/visualizers/dev/pitch-roll/` to
    `studio/src/visualizers/dev/my-viz/` (it is the minimal 2D template;
-   `final/circular-accumulator/` is the Three.js template).
+   `final/circular-accumulator/` is the Three.js mesh template;
+   `dev/noise-orbit-particles/` is the particles + seeded-noise template).
+   For the idea-to-implementation process, read
+   [CREATIVE_WORKFLOW.md](CREATIVE_WORKFLOW.md).
 2. Change `id`, `name`, `description`, params, and the drawing code.
 3. `npm run dev` — it appears in the studio dropdown with a `[dev]` badge.
 4. Preview against `samples/sustain_demo.timeline.json` (exercises pedal
@@ -229,6 +299,7 @@ npm run render -- --timeline samples/prelude_c.timeline.json `
   --fps 30 --width 1920 --height 1080 `
   --name prelude --tail 1.5 `
   --params "{""colorMode"":""track""}" `
+  --capture auto `
   --keep-frames --audio --midi samples/prelude_c.mid
 ```
 
@@ -239,16 +310,28 @@ Steps performed (all commented in the script):
 3. Launches headless Chromium via Playwright at exactly
    `--width × --height`, device scale factor forced to 1, sRGB.
 4. Loads `render.html`, calls `window.__viz.load({timeline, visualizerId,
-   params, width, height})`.
+   params, width, height, annotations})` (annotation sidecars are
+   auto-loaded from next to the timeline).
 5. For each frame `f` in `0 .. ceil((duration + tail) * fps)`:
-   `t = f / fps` → `window.__viz.renderFrame(t)` (waits two rAFs so the
-   frame is actually presented) → PNG screenshot
-   `frames/frame_%06d.png`.
+   `t = f / fps` → draw + capture `frames/frame_%06d.png`.
 6. ffmpeg: `-framerate fps -i frame_%06d.png -c:v libx264 -crf 18
    -pix_fmt yuv420p name.mp4`.
 7. Optionally renders/muxes audio (next section).
-8. Writes `render-info.json` (full settings, for provenance/gallery), then
-   **deletes the frames** unless `--keep-frames`.
+8. Writes `render-info.json` (full settings + measured capture rate +
+   the reproduction command), then **deletes the frames** unless
+   `--keep-frames`.
+
+### Capture modes (`--capture`, default `auto`)
+
+| mode | how a frame becomes a PNG | tradeoff |
+|---|---|---|
+| `canvas` | `renderAtTime(t)` then `canvas.toDataURL("image/png")` in-page; Node decodes the base64 and writes the file | **~2–4× faster**: no compositor wait (rAFs) and no CDP screenshot round-trip. Requires the visualizer to draw ONE full-size canvas, and WebGL contexts to set `preserveDrawingBuffer: true` (all bundled visualizers comply) |
+| `screenshot` | `renderFrame(t)` (two rAFs so the frame is presented) then Playwright `page.screenshot` | slower, but captures whatever the page shows — works for multi-canvas/DOM-overlay experiments. The reliable fallback |
+| `auto` | probes `canvas` once on frame 0 (checks it returns a PNG at exactly the target size); any problem → falls back to `screenshot` with a log line | use this unless debugging |
+
+Both paths capture the SAME deterministic `t = frame / fps` state — mode
+changes speed, never content. The resolved mode and measured capture fps
+are logged and recorded in `render-info.json`.
 
 Output structure per render job:
 
@@ -274,22 +357,14 @@ spawns this same script — CLI and studio are the same pipeline.
 
 ## Audio rendering
 
-**MIDI is not audio.** A MIDI file is sheet music for machines; producing
-sound requires a synthesizer plus instrument samples. This project uses the
-free/open-source pair:
+**MIDI is not audio** — rendering sound needs a synthesizer (FluidSynth)
+plus a SoundFont. Full setup, the exact commands used, and
+troubleshooting live in **[AUDIO_SETUP.md](AUDIO_SETUP.md)**; verify your
+setup any time with:
 
-- [FluidSynth](https://www.fluidsynth.org/) — install on Windows with
-  `winget install FluidSynth.FluidSynth` (or chocolatey/manual zip), then
-  ensure `fluidsynth` is on PATH.
-- A **SoundFont** (.sf2), e.g. "GeneralUser GS" (free) or
-  FluidR3_GM.sf2. Download one and set its path in
-  `config/project.config.json` → `soundfontPath`, or the `SOUNDFONT` env
-  var.
-
-Then add `--audio` to a render (with `--midi path.mid` if the MIDI doesn't
-sit next to the timeline JSON). The pipeline runs
-`fluidsynth -ni <sf2> <mid> -F <wav> -r 44100` and muxes the WAV into the
-MP4 with ffmpeg (`-c:v copy -c:a aac -shortest`).
+```powershell
+npm run check:audio
+```
 
 **Failure policy:** audio is strictly best-effort. If FluidSynth or the
 SoundFont is missing or errors, the reason is logged (`AUDIO SKIPPED: …`)

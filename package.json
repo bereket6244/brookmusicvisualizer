@@ -10,6 +10,7 @@
     "dev:server": "node renderer/server.js",
     "build": "vite build studio",
     "render": "node renderer/render.js",
+    "check:audio": "node renderer/check-audio.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "gallery": "python -m http.server 8899 --directory gallery"
@@ -18,6 +19,7 @@
     "express": "^4.21.2",
     "ffmpeg-static": "^5.2.0",
     "playwright": "^1.49.1",
+    "simplex-noise": "^4.0.3",
     "three": "^0.172.0"
   },
   "devDependencies": {
