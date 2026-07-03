@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>render target</title>
+    <style>
+      /* Zero chrome: the visualizer canvas must be the only pixel source. */
+      html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+      #stage { position: fixed; top: 0; left: 0; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <script type="module" src="/src/render/render-main.ts"></script>
+  </body>
+</html>

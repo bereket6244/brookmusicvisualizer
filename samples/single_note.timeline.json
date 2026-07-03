@@ -1,0 +1,79 @@
+{
+  "format": "midicore-timeline",
+  "format_version": "1.0",
+  "meta": {
+    "source_file": "single_note.mid",
+    "parsed_at": "2026-07-03T00:06:40",
+    "midi_format": 1,
+    "ticks_per_beat": 480,
+    "duration_seconds": 0.5,
+    "duration_ticks": 480,
+    "note_count": 1,
+    "track_count": 1,
+    "has_sustain_data": false,
+    "unterminated_notes": 0
+  },
+  "tempo_map": [
+    {
+      "tick": 0,
+      "seconds": 0.0,
+      "tempo_us_per_beat": 500000,
+      "bpm": 120.0
+    }
+  ],
+  "time_signature_map": [
+    {
+      "tick": 0,
+      "seconds": 0.0,
+      "numerator": 4,
+      "denominator": 4,
+      "bar": 1
+    }
+  ],
+  "tracks": [
+    {
+      "index": 0,
+      "name": "single note",
+      "channels": [
+        0
+      ],
+      "programs": [
+        {
+          "channel": 0,
+          "program": 0,
+          "name": "Acoustic Grand Piano"
+        }
+      ],
+      "note_count": 1
+    }
+  ],
+  "sustain_events": [],
+  "notes": [
+    {
+      "id": 0,
+      "pitch": 60,
+      "name": "C4",
+      "note_name": "C",
+      "octave": 4,
+      "velocity": 80,
+      "track": 0,
+      "track_name": "single note",
+      "channel": 0,
+      "program": 0,
+      "instrument": "Acoustic Grand Piano",
+      "start_tick": 0,
+      "end_tick_explicit": 480,
+      "end_tick_sounding": 480,
+      "duration_ticks_explicit": 480,
+      "duration_ticks_sounding": 480,
+      "start_seconds": 0.0,
+      "end_seconds_explicit": 0.5,
+      "end_seconds_sounding": 0.5,
+      "duration_seconds_explicit": 0.5,
+      "duration_seconds_sounding": 0.5,
+      "sustained": false,
+      "bar": 1,
+      "beat": 1.0
+    }
+  ]
+}

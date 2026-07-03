@@ -1,0 +1,11 @@
+{
+  "_comment": "Add finished renders here. type: video | image | note. Copy media files into gallery/media/ (gitignored) and reference them as media/<file>.",
+  "items": [
+    {
+      "type": "note",
+      "tag": "visualizer",
+      "title": "Circular Accumulator",
+      "description": "One circle per note, accumulating over the piece. Angle = start time (counterclockwise from top), radius from center = pitch vs middle C, size = sounding duration. Opaque core grows while the key is held; translucent halo keeps growing while the sustain pedal carries the note.\n\nRender the demo:\nnpm run render -- --timeline samples/prelude_c.timeline.json"
+    }
+  ]
+}

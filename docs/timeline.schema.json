@@ -1,0 +1,289 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "midicore timeline",
+  "description": "Normalized musical timeline extracted from a MIDI file. See docs/SCHEMA.md for plain-language field documentation.",
+  "type": "object",
+  "required": [
+    "format",
+    "format_version",
+    "meta",
+    "tempo_map",
+    "time_signature_map",
+    "tracks",
+    "sustain_events",
+    "notes"
+  ],
+  "properties": {
+    "format": {
+      "const": "midicore-timeline"
+    },
+    "format_version": {
+      "type": "string"
+    },
+    "meta": {
+      "type": "object",
+      "required": [
+        "source_file",
+        "ticks_per_beat",
+        "duration_seconds",
+        "duration_ticks",
+        "note_count",
+        "track_count",
+        "has_sustain_data"
+      ],
+      "properties": {
+        "source_file": {
+          "type": "string"
+        },
+        "parsed_at": {
+          "type": "string"
+        },
+        "midi_format": {
+          "type": "integer"
+        },
+        "ticks_per_beat": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "duration_seconds": {
+          "type": "number"
+        },
+        "duration_ticks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "note_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "track_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "has_sustain_data": {
+          "type": "boolean"
+        },
+        "unterminated_notes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "tempo_map": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "tick",
+          "seconds",
+          "tempo_us_per_beat",
+          "bpm"
+        ],
+        "properties": {
+          "tick": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "seconds": {
+            "type": "number"
+          },
+          "tempo_us_per_beat": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "bpm": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "time_signature_map": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "tick",
+          "seconds",
+          "numerator",
+          "denominator",
+          "bar"
+        ],
+        "properties": {
+          "tick": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "seconds": {
+            "type": "number"
+          },
+          "numerator": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "denominator": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "bar": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "tracks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "index",
+          "name",
+          "channels",
+          "programs",
+          "note_count"
+        ]
+      }
+    },
+    "sustain_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "tick",
+          "seconds",
+          "channel",
+          "value",
+          "pedal_down",
+          "track"
+        ]
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "pitch",
+          "name",
+          "note_name",
+          "octave",
+          "velocity",
+          "track",
+          "channel",
+          "start_tick",
+          "end_tick_explicit",
+          "end_tick_sounding",
+          "duration_ticks_explicit",
+          "duration_ticks_sounding",
+          "start_seconds",
+          "end_seconds_explicit",
+          "end_seconds_sounding",
+          "duration_seconds_explicit",
+          "duration_seconds_sounding",
+          "sustained",
+          "bar",
+          "beat"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "pitch": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 127
+          },
+          "name": {
+            "type": "string",
+            "description": "e.g. 'C4' (middle C = 60)"
+          },
+          "note_name": {
+            "type": "string"
+          },
+          "octave": {
+            "type": "integer"
+          },
+          "velocity": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 127
+          },
+          "track": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "track_name": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 15
+          },
+          "program": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "instrument": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "start_tick": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_tick_explicit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "end_tick_sounding": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duration_ticks_explicit": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "duration_ticks_sounding": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "start_seconds": {
+            "type": "number"
+          },
+          "end_seconds_explicit": {
+            "type": "number"
+          },
+          "end_seconds_sounding": {
+            "type": "number"
+          },
+          "duration_seconds_explicit": {
+            "type": "number"
+          },
+          "duration_seconds_sounding": {
+            "type": "number"
+          },
+          "sustained": {
+            "type": "boolean"
+          },
+          "bar": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "beat": {
+            "type": "number"
+          },
+          "unterminated": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  }
+}

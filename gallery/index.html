@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visualizer Gallery</title>
+  <style>
+    :root { --bg:#0e1118; --panel:#161b26; --border:#2a3346; --text:#dce3f0;
+            --muted:#8b96ab; --accent:#e8c547; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text);
+           font:15px/1.5 "Segoe UI", system-ui, sans-serif; }
+    header { padding:32px 24px 8px; max-width:1100px; margin:0 auto; }
+    header h1 { color:var(--accent); margin:0 0 4px; font-size:22px; }
+    header p { color:var(--muted); margin:0; }
+    header a { color:var(--accent); }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr));
+            gap:16px; padding:24px; max-width:1100px; margin:0 auto; }
+    .card { background:var(--panel); border:1px solid var(--border);
+            border-radius:10px; overflow:hidden; }
+    .card video, .card img { width:100%; display:block; background:#000; }
+    .card .body { padding:12px 14px; }
+    .card h2 { font-size:15px; margin:0 0 4px; }
+    .card .desc { color:var(--muted); font-size:13px; white-space:pre-wrap; }
+    .card .tag { display:inline-block; font-size:11px; color:var(--accent);
+                 border:1px solid var(--border); border-radius:8px;
+                 padding:0 8px; margin-bottom:6px; }
+    .empty { color:var(--muted); padding:24px; max-width:1100px; margin:0 auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Visualizer Gallery</h1>
+    <p>Finished renders and notes. This page only displays files listed in
+       <code>manifest.json</code> — it never parses MIDI or renders anything.
+       Project docs live in <code>docs/GUIDE.md</code> in the repo.</p>
+  </header>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="empty" hidden>
+    No items yet. Render something (<code>npm run render -- …</code>), copy the
+    MP4 into <code>gallery/media/</code>, and add an entry to
+    <code>gallery/manifest.json</code>.
+  </div>
+  <script src="gallery.js"></script>
+</body>
+</html>

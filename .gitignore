@@ -1,0 +1,25 @@
+# Node
+node_modules/
+studio/dist/
+*.local
+
+# Python
+midicore/.venv/
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# Generated outputs (frames, videos, uploads, audio, logs)
+output/
+
+# Gallery media is user-curated; keep the manifest, ignore big files
+gallery/media/*
+!gallery/media/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,30 @@
+{
+  "name": "midi-visualizer-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Modular MIDI-driven music visualizer: studio, deterministic renderer, gallery",
+  "scripts": {
+    "dev": "concurrently -k -n studio,server \"npm:dev:studio\" \"npm:dev:server\"",
+    "dev:studio": "vite studio",
+    "dev:server": "node renderer/server.js",
+    "build": "vite build studio",
+    "render": "node renderer/render.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "gallery": "python -m http.server 8899 --directory gallery"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ffmpeg-static": "^5.2.0",
+    "playwright": "^1.49.1",
+    "three": "^0.172.0"
+  },
+  "devDependencies": {
+    "@types/three": "^0.172.0",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  }
+}

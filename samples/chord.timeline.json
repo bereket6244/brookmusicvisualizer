@@ -1,0 +1,131 @@
+{
+  "format": "midicore-timeline",
+  "format_version": "1.0",
+  "meta": {
+    "source_file": "chord.mid",
+    "parsed_at": "2026-07-03T00:06:40",
+    "midi_format": 1,
+    "ticks_per_beat": 480,
+    "duration_seconds": 1.0,
+    "duration_ticks": 960,
+    "note_count": 3,
+    "track_count": 1,
+    "has_sustain_data": false,
+    "unterminated_notes": 0
+  },
+  "tempo_map": [
+    {
+      "tick": 0,
+      "seconds": 0.0,
+      "tempo_us_per_beat": 500000,
+      "bpm": 120.0
+    }
+  ],
+  "time_signature_map": [
+    {
+      "tick": 0,
+      "seconds": 0.0,
+      "numerator": 4,
+      "denominator": 4,
+      "bar": 1
+    }
+  ],
+  "tracks": [
+    {
+      "index": 0,
+      "name": "chord",
+      "channels": [
+        0
+      ],
+      "programs": [
+        {
+          "channel": 0,
+          "program": null,
+          "name": null
+        }
+      ],
+      "note_count": 3
+    }
+  ],
+  "sustain_events": [],
+  "notes": [
+    {
+      "id": 0,
+      "pitch": 60,
+      "name": "C4",
+      "note_name": "C",
+      "octave": 4,
+      "velocity": 90,
+      "track": 0,
+      "track_name": "chord",
+      "channel": 0,
+      "program": null,
+      "instrument": null,
+      "start_tick": 0,
+      "end_tick_explicit": 960,
+      "end_tick_sounding": 960,
+      "duration_ticks_explicit": 960,
+      "duration_ticks_sounding": 960,
+      "start_seconds": 0.0,
+      "end_seconds_explicit": 1.0,
+      "end_seconds_sounding": 1.0,
+      "duration_seconds_explicit": 1.0,
+      "duration_seconds_sounding": 1.0,
+      "sustained": false,
+      "bar": 1,
+      "beat": 1.0
+    },
+    {
+      "id": 1,
+      "pitch": 64,
+      "name": "E4",
+      "note_name": "E",
+      "octave": 4,
+      "velocity": 90,
+      "track": 0,
+      "track_name": "chord",
+      "channel": 0,
+      "program": null,
+      "instrument": null,
+      "start_tick": 0,
+      "end_tick_explicit": 960,
+      "end_tick_sounding": 960,
+      "duration_ticks_explicit": 960,
+      "duration_ticks_sounding": 960,
+      "start_seconds": 0.0,
+      "end_seconds_explicit": 1.0,
+      "end_seconds_sounding": 1.0,
+      "duration_seconds_explicit": 1.0,
+      "duration_seconds_sounding": 1.0,
+      "sustained": false,
+      "bar": 1,
+      "beat": 1.0
+    },
+    {
+      "id": 2,
+      "pitch": 67,
+      "name": "G4",
+      "note_name": "G",
+      "octave": 4,
+      "velocity": 90,
+      "track": 0,
+      "track_name": "chord",
+      "channel": 0,
+      "program": null,
+      "instrument": null,
+      "start_tick": 0,
+      "end_tick_explicit": 960,
+      "end_tick_sounding": 960,
+      "duration_ticks_explicit": 960,
+      "duration_ticks_sounding": 960,
+      "start_seconds": 0.0,
+      "end_seconds_explicit": 1.0,
+      "end_seconds_sounding": 1.0,
+      "duration_seconds_explicit": 1.0,
+      "duration_seconds_sounding": 1.0,
+      "sustained": false,
+      "bar": 1,
+      "beat": 1.0
+    }
+  ]
+}
