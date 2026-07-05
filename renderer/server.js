@@ -15,7 +15,15 @@
  *   GET    /api/presets/:file        one preset's JSON
  *   POST   /api/presets              save a preset
  *   DELETE /api/presets/:file        delete a preset
+ *   POST   /api/upload-midi?name=x.mid
+ *                                    save a MIDI WITHOUT parsing — used to
+ *                                    attach a source MIDI to a timeline-only
+ *                                    upload so audio rendering works
+ *   GET    /api/audio-status         audio-render readiness (FluidSynth +
+ *                                    SoundFont resolution chain; pass
+ *                                    ?midi=path to also verify a source MIDI)
  *   POST   /api/render               spawn renderer/render.js as a child job
+ *                                    (body may include audio:true + midi)
  *   GET    /api/jobs                 all jobs from this server session
  *   GET    /api/jobs/:id             poll one job's status + log tail
  *   GET    /api/renders              render history from render-info.json
@@ -29,6 +37,7 @@ import path from "node:path";
 
 import express from "express";
 
+import { audioStatus } from "./lib/audio.js";
 import { loadConfig, ROOT } from "./lib/config.js";
 import { parseMidi } from "./lib/python.js";
 
@@ -111,6 +120,41 @@ app.post("/api/upload-timeline", (req, res) => {
   }
 });
 
+// Attach a source MIDI without re-parsing (for timeline-only uploads that
+// want audio: the timeline drives the visuals, this MIDI drives the sound).
+app.post(
+  "/api/upload-midi",
+  express.raw({ type: () => true, limit: "50mb" }),
+  (req, res) => {
+    try {
+      const safe = sanitizeName(req.query.name || "attached.mid");
+      const base = safe.replace(/\.(mid|midi)$/i, "");
+      const uploadsDir = path.join(ROOT, "output", "uploads");
+      fs.mkdirSync(uploadsDir, { recursive: true });
+      const midiPath = path.join(uploadsDir, `${base}.mid`);
+      fs.writeFileSync(midiPath, req.body);
+      res.json({
+        midi: path.relative(ROOT, midiPath).replaceAll("\\", "/"),
+      });
+    } catch (err) {
+      res.status(500).send(String(err.message ?? err));
+    }
+  },
+);
+
+// Audio-render readiness for the studio's status indicator. The check is
+// cheap (one `fluidsynth --version` + a couple of stat calls) but not
+// free, so the studio calls it on load / timeline change, not per frame.
+app.get("/api/audio-status", (req, res) => {
+  const status = audioStatus();
+  if (req.query.midi) {
+    const midiPath = path.join(ROOT, String(req.query.midi));
+    // Guard against path escape; the midi param is a project-relative path.
+    status.midiOk = midiPath.startsWith(ROOT) && fs.existsSync(midiPath);
+  }
+  res.json(status);
+});
+
 // ---------------------------------------------------------------------------
 // Presets — stored as pretty JSON files under presets/ (repo root) so they
 // are easy to commit, diff, share, and feed to the CLI.
@@ -173,10 +217,17 @@ app.delete("/api/presets/:file", (req, res) => {
 const jobs = new Map();
 
 app.post("/api/render", (req, res) => {
-  const { timeline, visualizer, params, fps, width, height, name, capture } =
-    req.body;
+  const { timeline, visualizer, params, fps, width, height, name, capture,
+    audio, midi } = req.body;
   if (!timeline || !visualizer) {
     return res.status(400).send("timeline and visualizer are required");
+  }
+  if (audio && !midi) {
+    // Fail fast with a clear message instead of a mid-render surprise: the
+    // studio always knows the MIDI path when audio is enabled.
+    return res.status(400).send(
+      "audio:true requires a midi path (the timeline alone cannot be "
+      + "synthesized — upload the source .mid or attach one)");
   }
   const jobId = crypto.randomBytes(6).toString("hex");
   const cliArgs = [
@@ -189,6 +240,7 @@ app.post("/api/render", (req, res) => {
     "--name", sanitizeName(name ?? "render"),
     "--capture", String(capture ?? "auto"),
     "--params", JSON.stringify(params ?? {}),
+    ...(audio ? ["--audio", "--midi", String(midi)] : []),
   ];
   const child = spawn(process.execPath, cliArgs, { cwd: ROOT });
   const job = {
@@ -197,6 +249,8 @@ app.post("/api/render", (req, res) => {
     startedAt: Date.now(),
     visualizer,
     timeline,
+    audioRequested: Boolean(audio),
+    audio: null, // filled from the renderer's [render-json] audio event
     outDir: null,
     command: `node ${cliArgs.map((a) => (/[ "{]/.test(a) ? `'${a}'` : a)).join(" ")}`,
   };
@@ -212,6 +266,10 @@ app.post("/api/render", (req, res) => {
           if (info.jobDir) job.outDir = info.jobDir;
           if (info.captureMode) job.captureMode = info.captureMode;
           if (info.captureFps) job.captureFps = info.captureFps;
+          if (info.event === "audio") {
+            const { event, ...audioInfo } = info;
+            job.audio = audioInfo; // { requested, ok, midi, soundfont?, output?, reason? }
+          }
         } catch { /* malformed metadata line — ignore */ }
         continue; // metadata lines stay out of the human-readable log
       }
@@ -261,6 +319,7 @@ app.get("/api/renders", (_req, res) => {
           captureMode: info.captureMode,
           captureFps: info.captureFps,
           command: info.command,
+          audio: typeof info.audio === "object" ? info.audio : null,
           finishedAt: info.finishedAt,
           status: "done",
         });

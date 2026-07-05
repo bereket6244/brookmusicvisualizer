@@ -268,27 +268,38 @@ async function main() {
   log(`wrote ${path.relative(ROOT, silentPath)}`);
 
   // -- optional audio ---------------------------------------------------------
-  let audioResult = null;
+  // Everything about the attempt is recorded (render-info.json + a
+  // [render-json] line the studio backend folds into the job) so the UI
+  // can say exactly what happened instead of hiding a silent fallback.
+  const audioInfo = { requested: settings.audio, ok: false };
   if (settings.audio) {
     const midiPath = settings.midi
       // Convention: samples/foo.timeline.json sits next to samples/foo.mid
       ?? settings.timeline.replace(/\.timeline\.json$/, ".mid");
+    audioInfo.midi = path.relative(ROOT, midiPath).replaceAll("\\", "/");
     if (!fs.existsSync(midiPath)) {
-      audioResult = { ok: false, reason: `MIDI file not found: ${midiPath} (pass --midi)` };
+      audioInfo.reason = `source MIDI not found: ${audioInfo.midi} (pass --midi)`;
     } else {
       const wavPath = path.join(jobDir, `${settings.name}.wav`);
       log("rendering audio with fluidsynth…");
-      audioResult = renderAudio(midiPath, wavPath);
-      if (audioResult.ok) {
+      const result = renderAudio(midiPath, wavPath);
+      if (result.ok) {
+        audioInfo.soundfont = path.relative(ROOT, result.soundfont).replaceAll("\\", "/");
+        audioInfo.fluidsynth = result.fluidsynth;
         const withAudio = path.join(jobDir, `${settings.name}_audio.mp4`);
         muxAudio(silentPath, wavPath, withAudio);
-        log(`wrote ${path.relative(ROOT, withAudio)}`);
+        audioInfo.ok = true;
+        audioInfo.output = path.basename(withAudio);
+        log(`wrote ${path.relative(ROOT, withAudio)} (MP4 WITH AUDIO)`);
+      } else {
+        audioInfo.reason = result.reason;
       }
     }
-    if (audioResult && !audioResult.ok) {
-      log(`AUDIO SKIPPED: ${audioResult.reason}`);
+    if (!audioInfo.ok) {
+      log(`AUDIO SKIPPED: ${audioInfo.reason}`);
       log("the silent MP4 above is still valid output");
     }
+    logJson({ event: "audio", ...audioInfo });
   }
 
   // -- provenance + cleanup ---------------------------------------------------
@@ -304,6 +315,9 @@ async function main() {
     settings.capture !== "auto" ? `--capture ${settings.capture}` : "",
     Object.keys(settings.params).length
       ? `--params '${JSON.stringify(settings.params)}'` : "",
+    settings.audio ? "--audio" : "",
+    settings.audio && settings.midi
+      ? `--midi "${path.relative(ROOT, settings.midi).replaceAll("\\", "/")}"` : "",
   ].filter(Boolean).join(" ");
 
   fs.writeFileSync(
@@ -319,7 +333,9 @@ async function main() {
         captureMode,
         captureFps: Number(captureFps.toFixed(2)),
         command,
-        audio: audioResult ?? "not requested",
+        // Full audio provenance: requested?, succeeded?, which MIDI +
+        // SoundFont were used, and which output file carries sound.
+        audio: audioInfo,
         finishedAt: new Date().toISOString(),
       },
       null, 2,

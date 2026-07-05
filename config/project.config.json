@@ -1,6 +1,7 @@
-{
+﻿{
   "pythonCommand": null,
   "soundfontPath": null,
+  "fluidsynthPath": null,
   "serverPort": 8787,
   "render": {
     "fps": 30,
@@ -11,3 +12,5 @@
     "keepFrames": false
   }
 }
+
+

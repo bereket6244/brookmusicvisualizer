@@ -21,6 +21,11 @@ output/
 gallery/media/*
 !gallery/media/.gitkeep
 
+# Vendored audio dependencies (FluidSynth build + SoundFont) are large
+# binaries fetched per-machine by `npm run setup:audio` — never committed.
+vendor/*
+!vendor/README.md
+
 # OS / editor
 .DS_Store
 Thumbs.db

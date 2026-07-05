@@ -17,7 +17,11 @@ const CONFIG_PATH = path.join(ROOT, "config", "project.config.json");
 export function loadConfig() {
   const defaults = {
     pythonCommand: null,
+    // Audio deps: null = use the fallback chain (env vars -> vendor/ ->
+    // system PATH); see renderer/lib/audio.js. `npm run setup:audio`
+    // fills these in with project-local vendor paths.
     soundfontPath: null,
+    fluidsynthPath: null,
     serverPort: 8787,
     render: {
       fps: 30,

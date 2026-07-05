@@ -1,10 +1,38 @@
 # Limitations & failure log
 
 Honest list of what is approximate, untested, or intentionally out of
-scope — updated after the second pass (studio revamp, 2026-07-03).
-Everything under "Verified" was exercised on the development machine.
+scope — updated after the third pass (studio audio rendering,
+2026-07-05). Everything under "Verified" was exercised on the
+development machine.
 
 ## Verified working (Windows 11, Python 3.14, Node 24)
+
+### Third pass (audio)
+
+- **`npm run setup:audio` ran fully automatically**: FluidSynth v2.5.6
+  win10-x64 (2.7 MB) + GeneralUser GS v2.0.3 (32.3 MB) + its license
+  downloaded into `vendor/`, sha256s recorded, config written, chain
+  validated.
+- **`npm run check:audio` — all 4 checks pass**, including a real
+  test-MIDI→WAV render through the fixed FluidSynth argument order
+  (`-ni -F out.wav -r 44100 font.sf2 song.mid`; order pinned by
+  `renderer/lib/audio.test.js`).
+- **CLI `--audio` render verified**: `name_audio.mp4` produced; ffmpeg
+  stream inspection confirmed H.264 video + AAC 44.1 kHz stereo audio.
+- **Studio audio E2E — 14/14 checks**: upload `.mid` → status flips to
+  "Audio: Ready" → silent render → render with audio (UI reports
+  `♪ audio MP4`) → with-audio file exists on disk →
+  `render-info.json` records requested/ok/midi/soundfont/output →
+  timeline-JSON-only upload correctly disables audio with an explanation
+  → attaching the matching `.mid` re-enables it. No page errors.
+- **Silent fallback verified**: with the SoundFont removed, an `--audio`
+  render still exits 0, keeps the silent MP4, logs
+  `AUDIO SKIPPED: … run npm run setup:audio`, and the structured failure
+  reaches the job record (shown as a ⚠ warning in the studio).
+- **Vendor auto-discovery verified**: with config paths set to null, the
+  chain still resolves both dependencies from `vendor/`.
+
+### Earlier passes
 
 - **33 pytest tests** (parser incl. re-strike/SMPTE/mid-bar-timesig +
   Python timing engine + samples) — pass.
@@ -34,14 +62,18 @@ Everything under "Verified" was exercised on the development machine.
 
 ## Not verified / known gaps
 
-- **Audio rendering was still not executed end-to-end** — FluidSynth and
-  a SoundFont remain uninstalled on the dev machine (installing system
-  audio software was out of scope for this pass). What improved: `npm run
-  check:audio` diagnoses every link of the chain (including a real
-  test-MIDI→WAV render once dependencies exist), and
-  [AUDIO_SETUP.md](AUDIO_SETUP.md) documents the exact Windows setup. The
-  render path itself (`renderer/lib/audio.js`) still follows the
-  documented FluidSynth CLI and fails soft (silent MP4 kept).
+- **Audio is now verified end-to-end (third pass)** — see above. Remaining
+  audio caveats: `vendor/` binaries are per-machine downloads (a zipped
+  copy of the repo does not carry them; run `npm run setup:audio` after
+  unzip/clone), the bootstrapper depends on GitHub release/raw URLs
+  staying alive (manual fallback instructions are printed if they rot),
+  and the checksum record in `vendor/CHECKSUMS.txt` documents what was
+  downloaded rather than verifying against pinned upstream hashes (the
+  upstream projects do not publish stable ones).
+- **Audio+video sync is by construction, not by measurement** — frames
+  and WAV both derive from the same tempo map, and spot-listening
+  confirmed alignment, but no automated cross-correlation test compares
+  the two streams.
 - **Studio audio preview remains a simple triangle-wave synth** (now with
   an off/synth mode selector and an audio-vs-visual drift readout in the
   inspector). A SoundFont-backed browser preview was evaluated and

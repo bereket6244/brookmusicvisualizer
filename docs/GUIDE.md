@@ -358,13 +358,23 @@ spawns this same script — CLI and studio are the same pipeline.
 ## Audio rendering
 
 **MIDI is not audio** — rendering sound needs a synthesizer (FluidSynth)
-plus a SoundFont. Full setup, the exact commands used, and
-troubleshooting live in **[AUDIO_SETUP.md](AUDIO_SETUP.md)**; verify your
-setup any time with:
+plus a SoundFont. Setup is one self-contained command (everything lands
+in the gitignored `vendor/` folder, nothing system-wide):
 
 ```powershell
-npm run check:audio
+npm run setup:audio     # one-time, per machine
+npm run check:audio     # verify all four links of the chain
 ```
+
+Then either tick **"Render with audio"** in the studio's Render panel
+(the status line above it reports readiness and exactly what is missing)
+or add `--audio` to a CLI render. Both need the SOURCE MIDI: a timeline
+JSON alone cannot be synthesized — the studio tracks the `.mid` you
+uploaded, offers an attach input for timeline-only uploads, and the CLI
+falls back to the `foo.timeline.json` → `foo.mid` convention or `--midi`.
+Resolution chains, the exact FluidSynth command (argument order matters —
+it is regression-tested), licensing notes, and troubleshooting live in
+**[AUDIO_SETUP.md](AUDIO_SETUP.md)**.
 
 **Failure policy:** audio is strictly best-effort. If FluidSynth or the
 SoundFont is missing or errors, the reason is logged (`AUDIO SKIPPED: …`)

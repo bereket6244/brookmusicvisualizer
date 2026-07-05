@@ -189,6 +189,15 @@ button:disabled { opacity: 0.45; cursor: default; }
 .advanced-toggle input { margin: 0; }
 .hint { color: var(--muted); font-size: 10px; font-weight: normal; }
 
+/* ---- inline checkbox rows (render-with-audio etc.) ---- */
+.check-label {
+  display: flex; gap: 7px; align-items: center;
+  color: var(--text); font-size: 13px; margin: 10px 0 2px;
+  cursor: pointer;
+}
+.check-label input { margin: 0; }
+.check-label:has(input:disabled) { color: var(--muted); cursor: default; }
+
 /* ---- file-input styled as a button (preset import) ---- */
 .file-btn {
   display: inline-block;

@@ -11,6 +11,7 @@
     "build": "vite build studio",
     "render": "node renderer/render.js",
     "check:audio": "node renderer/check-audio.js",
+    "setup:audio": "node renderer/setup-audio.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "gallery": "python -m http.server 8899 --directory gallery"

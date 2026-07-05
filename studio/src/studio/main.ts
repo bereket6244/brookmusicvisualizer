@@ -43,6 +43,10 @@ interface State {
   timeline: Timeline | null;
   /** Server-side path of the timeline (needed to launch renders). */
   timelinePath: string | null;
+  /** Server-side path of the SOURCE MIDI, when one exists. Audio rendering
+   * needs it: a timeline JSON describes the visuals but cannot be
+   * synthesized into sound. */
+  midiPath: string | null;
   engine: TimingEngine | null;
   annotations: AnnotationSet | null;
   vizDef: VisualizerDefinition | null;
@@ -56,8 +60,8 @@ interface State {
 }
 
 const state: State = {
-  timeline: null, timelinePath: null, engine: null, annotations: null,
-  vizDef: null, viz: null, params: {},
+  timeline: null, timelinePath: null, midiPath: null, engine: null,
+  annotations: null, vizDef: null, viz: null, params: {},
   playing: false, t: 0, playWallStart: 0, playTStart: 0,
 };
 
@@ -136,6 +140,14 @@ app.innerHTML = `
         <option value="canvas">canvas (fast)</option>
         <option value="screenshot">screenshot (reliable)</option>
       </select>
+      <label class="check-label" title="Synthesize the source MIDI with FluidSynth and mux it into the MP4. Needs the audio setup (npm run setup:audio) and the source .mid.">
+        <input type="checkbox" id="r-audio" disabled /> Render with audio
+      </label>
+      <div class="status" id="audio-status">Audio: checking…</div>
+      <div id="attach-midi-row" hidden>
+        <label>Attach the source MIDI <span class="hint">(timeline JSON alone cannot be synthesized)</span></label>
+        <input type="file" id="attach-midi" accept=".mid,.midi" />
+      </div>
       <div class="row">
         <button id="render-btn">Render video</button>
         <button class="secondary" id="still-btn" title="Save the current frame as a PNG at the render resolution">Capture still</button>
@@ -200,9 +212,13 @@ function currentRenderSettings(): RenderSettings {
 // Timeline loading
 // ---------------------------------------------------------------------------
 
-function loadTimeline(timeline: Timeline, path: string | null, label: string) {
+function loadTimeline(
+  timeline: Timeline, path: string | null, label: string,
+  midiPath: string | null = null,
+) {
   state.timeline = timeline;
   state.timelinePath = path;
+  state.midiPath = midiPath;
   state.engine = new TimingEngine(timeline);
   state.annotations = null;
   state.t = 0;
@@ -213,6 +229,7 @@ function loadTimeline(timeline: Timeline, path: string | null, label: string) {
   renderMetaTable(timeline);
   rebuildVisualizer();
   setStatus("render-status", path ? "" : "local-only timeline: preview works, rendering needs the backend");
+  void refreshAudioStatus();
 }
 
 function renderMetaTable(tl: Timeline) {
@@ -233,13 +250,18 @@ function renderMetaTable(tl: Timeline) {
     .join("");
 }
 
+/** Source-MIDI path per sample timeline (samples ship both files). */
+const sampleMidiMap = new Map<string, string | null>();
+
 async function fetchSamples() {
   try {
     const res = await fetch("/api/samples");
     if (!res.ok) throw new Error(String(res.status));
-    const samples: { name: string; timeline: string }[] = await res.json();
+    const samples: { name: string; timeline: string; midi: string | null }[] =
+      await res.json();
     const select = $<HTMLSelectElement>("sample-select");
     for (const s of samples) {
+      sampleMidiMap.set(s.timeline, s.midi);
       const opt = document.createElement("option");
       opt.value = s.timeline;
       opt.textContent = s.name;
@@ -257,7 +279,8 @@ $<HTMLSelectElement>("sample-select").addEventListener("change", async (e) => {
   if (!path) return;
   const res = await fetch(`/${path}`);
   const timeline: Timeline = await res.json();
-  loadTimeline(timeline, path, path.split("/").pop()!);
+  loadTimeline(timeline, path, path.split("/").pop()!,
+    sampleMidiMap.get(path) ?? null);
   // Auto-load a sidecar annotations file if one sits next to the timeline.
   try {
     const annRes = await fetch(`/${path.replace(/\.timeline\.json$/, ".annotations.json")}`);
@@ -281,8 +304,10 @@ $<HTMLInputElement>("midi-file").addEventListener("change", async (e) => {
       body: await file.arrayBuffer(),
     });
     if (!res.ok) throw new Error(await res.text());
-    const { path, timeline } = await res.json();
-    loadTimeline(timeline, path, file.name);
+    // The backend keeps the uploaded .mid next to the parsed timeline and
+    // returns both paths — the MIDI one is what audio rendering needs.
+    const { path, midi, timeline } = await res.json();
+    loadTimeline(timeline, path, file.name, midi ?? null);
   } catch (err) {
     setStatus("timeline-status", `parse failed: ${err}`, "error");
   }
@@ -706,6 +731,103 @@ function updateInspector() {
 setInterval(updateInspector, 250);
 
 // ---------------------------------------------------------------------------
+// Audio-render readiness. The studio never guesses: the backend reports
+// the FluidSynth/SoundFont resolution result, and the studio combines it
+// with whether the CURRENT timeline has a source MIDI (a timeline JSON
+// alone cannot be synthesized into sound).
+// ---------------------------------------------------------------------------
+
+interface AudioStatusReport {
+  ready: boolean;
+  fluidsynth: { ok: boolean; version: string | null; source: string | null; reason: string | null };
+  soundfont: { ok: boolean; path: string | null; source: string | null; reason: string | null };
+  midiOk?: boolean;
+  fix: string | null;
+}
+
+/** Last backend report; null until fetched, stays null if backend is down. */
+let audioReport: AudioStatusReport | null = null;
+
+async function refreshAudioStatus() {
+  const checkbox = $<HTMLInputElement>("r-audio");
+  const attachRow = $("attach-midi-row");
+  try {
+    const query = state.midiPath
+      ? `?midi=${encodeURIComponent(state.midiPath)}` : "";
+    const res = await fetch(`/api/audio-status${query}`);
+    if (!res.ok) throw new Error(String(res.status));
+    audioReport = await res.json();
+  } catch {
+    audioReport = null;
+    checkbox.checked = false;
+    checkbox.disabled = true;
+    attachRow.hidden = true;
+    setStatus("audio-status", "Audio: status unknown (backend not running)");
+    return;
+  }
+  const r = audioReport!;
+  // Show the attach input whenever a renderable timeline lacks a source
+  // MIDI — that is the one gap the user can fix right here.
+  const midiMissing = Boolean(state.timelinePath) && !state.midiPath;
+  const midiBroken = Boolean(state.midiPath) && r.midiOk === false;
+  attachRow.hidden = !midiMissing && !midiBroken;
+
+  if (!r.fluidsynth.ok) {
+    checkbox.checked = false;
+    checkbox.disabled = true;
+    setStatus("audio-status",
+      "Audio: Missing FluidSynth — run `npm run setup:audio` once "
+      + "(installs a project-local copy, no admin needed)", "error");
+  } else if (!r.soundfont.ok) {
+    checkbox.checked = false;
+    checkbox.disabled = true;
+    setStatus("audio-status",
+      "Audio: Missing SoundFont — run `npm run setup:audio` once "
+      + "(downloads the free GeneralUser GS bank)", "error");
+  } else if (!state.timelinePath) {
+    checkbox.checked = false;
+    checkbox.disabled = true;
+    setStatus("audio-status", "Audio: setup ready — load a timeline first");
+  } else if (midiMissing || midiBroken) {
+    checkbox.checked = false;
+    checkbox.disabled = true;
+    setStatus("audio-status",
+      midiBroken
+        ? `Audio: source MIDI not found on the server (${state.midiPath}) — attach it below`
+        : "Audio: setup ready, but this timeline has no source MIDI — "
+          + "attach the matching .mid below (a timeline JSON alone cannot "
+          + "be synthesized)", "error");
+  } else {
+    checkbox.disabled = false;
+    const font = r.soundfont.path?.split(/[\\/]/).pop();
+    setStatus("audio-status",
+      `Audio: Ready — ${r.fluidsynth.version ?? "fluidsynth"} + ${font}`, "ok");
+  }
+}
+
+$<HTMLInputElement>("attach-midi").addEventListener("change", async (e) => {
+  const file = (e.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  try {
+    const res = await fetch(`/api/upload-midi?name=${encodeURIComponent(file.name)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/octet-stream" },
+      body: await file.arrayBuffer(),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const { midi } = await res.json();
+    state.midiPath = midi;
+    setStatus("audio-status", `Audio: attached ${file.name} — rechecking…`);
+    await refreshAudioStatus();
+    // Auto-enable: attaching a MIDI is an unambiguous "I want audio".
+    const checkbox = $<HTMLInputElement>("r-audio");
+    if (!checkbox.disabled) checkbox.checked = true;
+  } catch (err) {
+    setStatus("audio-status", `Audio: attach failed: ${err}`, "error");
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Render job launch + polling + history
 // ---------------------------------------------------------------------------
 
@@ -716,6 +838,8 @@ $("render-btn").addEventListener("click", async () => {
   }
   const r = currentRenderSettings();
   const frames = frameCount(state.engine.durationSeconds, r.fps, 1.5);
+  const withAudio =
+    $<HTMLInputElement>("r-audio").checked && Boolean(state.midiPath);
   const body = {
     timeline: state.timelinePath,
     visualizer: state.vizDef.id,
@@ -726,8 +850,11 @@ $("render-btn").addEventListener("click", async () => {
     height: r.height,
     name: r.name,
     capture: r.capture,
+    audio: withAudio,
+    midi: withAudio ? state.midiPath : undefined,
   };
-  setStatus("render-status", `starting render (~${frames} frames)…`);
+  setStatus("render-status",
+    `starting render (~${frames} frames${withAudio ? ", with audio" : ""})…`);
   try {
     const res = await fetch("/api/render", {
       method: "POST",
@@ -750,8 +877,22 @@ async function pollJob(jobId: string) {
       const tail = job.log.slice(-3).join("\n");
       if (job.status === "done") {
         clearInterval(timer);
+        // Audio outcome is reported explicitly — a silent fallback must be
+        // a visible warning, never a quiet surprise.
+        let audioLine = "";
+        let cls: "ok" | "error" = "ok";
+        if (job.audioRequested) {
+          if (job.audio?.ok) {
+            audioLine = `\n♪ audio MP4: ${job.audio.output}`;
+          } else {
+            audioLine = `\n⚠ AUDIO FAILED — silent MP4 kept. `
+              + `Reason: ${job.audio?.reason ?? "unknown (see log)"}`;
+            cls = "error";
+          }
+        }
         setStatus("render-status",
-          `done!${job.outDir ? `\noutput: ${job.outDir}` : ""}\n${tail}`, "ok");
+          `done!${job.outDir ? `\noutput: ${job.outDir}` : ""}${audioLine}\n${tail}`,
+          cls);
         void refreshHistory();
       } else if (job.status === "failed") {
         clearInterval(timer);
@@ -780,6 +921,7 @@ interface HistoryEntry {
   command?: string;
   captureMode?: string;
   captureFps?: number;
+  audio?: { requested: boolean; ok: boolean; output?: string; reason?: string } | null;
 }
 
 async function refreshHistory() {
@@ -801,6 +943,7 @@ async function refreshHistory() {
           ${r.visualizer ?? "?"} · ${r.width ?? "?"}x${r.height ?? "?"}@${r.fps ?? "?"}fps
           · ${r.totalFrames ?? "?"} frames
           ${r.captureMode ? `· ${r.captureMode}${r.captureFps ? ` @ ${r.captureFps.toFixed(1)} cap-fps` : ""}` : ""}
+          ${r.audio?.requested ? (r.audio.ok ? "· ♪ with audio" : "· ⚠ audio failed") : ""}
         </div>
         <div class="history-meta">${r.dir}</div>
         ${r.command ? `<button class="secondary tiny" data-cmd="${encodeURIComponent(r.command)}">copy command</button>` : ""}
@@ -820,4 +963,5 @@ $<HTMLDetailsElement>("render-history-box").addEventListener("toggle", (e) => {
 populateVizSelect();
 void fetchSamples();
 void refreshPresets();
+void refreshAudioStatus();
 requestAnimationFrame(tick);

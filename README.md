@@ -33,6 +33,10 @@ cd ..
 # Node side (studio + renderer) — one-time browser download included
 npm install
 npx playwright install chromium
+
+# Optional but recommended: self-contained audio rendering
+# (downloads FluidSynth + a free SoundFont into vendor/, ~35 MB)
+npm run setup:audio
 ```
 
 ## Quick run
@@ -59,7 +63,9 @@ npm run render -- --timeline samples/prelude_c.timeline.json --visualizer circul
 | Run TypeScript tests | `npm test` |
 | Launch studio | `npm run dev` |
 | Render silent video | `npm run render -- --timeline <timeline.json> [--fps 30 --width 1920 --height 1080]` |
-| Render with audio (needs FluidSynth + SoundFont, see guide) | add `--audio` |
+| Render with audio (CLI) | add `--audio` (source `.mid` found next to the timeline, or pass `--midi`) |
+| Render with audio (Studio) | tick **"Render with audio"** in the Render panel |
+| Set up audio dependencies | `npm run setup:audio` (one-time, project-local, no admin) |
 | Check the audio setup | `npm run check:audio` |
 | Faster frame capture | add `--capture canvas` (default `auto` picks it when possible) |
 | Serve the gallery | `npm run gallery` |

@@ -67,6 +67,16 @@ against, a timestamp, and an optional note.
 - FPS / width / height / output name / **capture mode**
   (`auto` probes the fast canvas path, falls back to `screenshot`; see
   [GUIDE.md → Render pipeline](GUIDE.md#render-pipeline)).
+- **Render with audio** — synthesizes the source MIDI with FluidSynth and
+  muxes it into the MP4 (you get both `name.mp4` silent and
+  `name_audio.mp4`). The **Audio status line** underneath reports
+  readiness: `Ready` (with the resolved synth + SoundFont), `Missing
+  FluidSynth/SoundFont` (fix: `npm run setup:audio`, see
+  [AUDIO_SETUP.md](AUDIO_SETUP.md)), or `no source MIDI` for
+  timeline-JSON-only uploads — in that case an **Attach the source MIDI**
+  input appears, because a timeline alone cannot be synthesized. If audio
+  fails mid-render the job still finishes and the UI shows a ⚠ warning
+  with the reason; the silent MP4 is always kept.
 - **Render video** — spawns `renderer/render.js` as a backend job; the
   status area streams the log tail (frame progress, capture rate, output
   path, clear failure messages).
@@ -102,6 +112,8 @@ Every studio action has a command-line twin:
 |---|---|
 | upload MIDI | `midicore\.venv\Scripts\python -m midicore parse song.mid` |
 | render video | `npm run render -- --timeline … --visualizer … --params '…'` (or "Copy cmd") |
+| render with audio | same + `--audio --midi song.mid` (studio: the "Render with audio" checkbox) |
+| audio setup | `npm run setup:audio` |
 | capture still | `npm run render -- … --fps 1 --tail 0 --keep-frames` then take the PNG you want |
 | audio check | `npm run check:audio` |
 | inspect state at t | `midicore\.venv\Scripts\python -m midicore info tl.json --at 12.5` |
