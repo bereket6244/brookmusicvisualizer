@@ -1,7 +1,7 @@
-﻿{
+{
   "pythonCommand": null,
-  "soundfontPath": null,
-  "fluidsynthPath": null,
+  "soundfontPath": "vendor/soundfonts/GeneralUser-GS.sf2",
+  "fluidsynthPath": "vendor/fluidsynth/windows/fluidsynth-v2.5.6-win10-x64-cpp11/bin/fluidsynth.exe",
   "serverPort": 8787,
   "render": {
     "fps": 30,
@@ -12,5 +12,3 @@
     "keepFrames": false
   }
 }
-
-

@@ -30,7 +30,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { audioStatus, findVendorPaths } from "./lib/audio.js";
-import { ROOT } from "./lib/config.js";
+import { ROOT, readJsonFile } from "./lib/config.js";
 
 const VENDOR_FS_DIR = path.join(ROOT, "vendor", "fluidsynth", "windows");
 const VENDOR_SF_DIR = path.join(ROOT, "vendor", "soundfonts");
@@ -161,7 +161,7 @@ async function setupSoundfont(checksums) {
 // ---------------------------------------------------------------------------
 
 function writeConfig(fluidsynthPath, soundfontPath) {
-  const config = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+  const config = readJsonFile(CONFIG_PATH);
   // Store project-relative paths so the repo folder stays movable.
   config.fluidsynthPath = path.relative(ROOT, fluidsynthPath).replaceAll("\\", "/");
   config.soundfontPath = path.relative(ROOT, soundfontPath).replaceAll("\\", "/");

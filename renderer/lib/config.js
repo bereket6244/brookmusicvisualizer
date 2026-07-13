@@ -14,6 +14,10 @@ export const ROOT = path.resolve(
 
 const CONFIG_PATH = path.join(ROOT, "config", "project.config.json");
 
+export function readJsonFile(filePath) {
+  return JSON.parse(fs.readFileSync(filePath, "utf-8").replace(/^\uFEFF/, ""));
+}
+
 export function loadConfig() {
   const defaults = {
     pythonCommand: null,
@@ -36,7 +40,7 @@ export function loadConfig() {
     },
   };
   try {
-    const user = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+    const user = readJsonFile(CONFIG_PATH);
     return {
       ...defaults,
       ...user,
